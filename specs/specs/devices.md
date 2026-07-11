@@ -73,7 +73,7 @@ Los protocolos definen **cómo se lee la señal** en el borde. Nexo los soporta 
 
 **Distinción clave (protocolo de dispositivo ≠ conector de ERP):** los protocolos de esta tabla capturan **datos de planta**. Los **conectores** de [integrations.md](./integrations.md) sincronizan con **sistemas de gestión (ERP)**. Aunque MQTT/OPC UA/Modbus/HTTP aparecen en ambos documentos, aquí se usan para **leer hardware**; allí, para **integrar sistemas externos**. Nexo mantiene ambos planos desacoplados.
 
-> **Roadmap de protocolos (brief §11):** el MVP prioriza **S7 y datalogger**; V1 completa **OPC UA/Modbus/MQTT**. El modelo de datos de Devices soporta todos desde el día 1 para no requerir migraciones al habilitar cada uno.
+> **Roadmap de protocolos — decisión cerrada (DEV-02, 2026-07-11):** el **MVP** cubre **captura manual + datalogger vía carga de archivo/CSV/Excel**; los protocolos industriales de captura automática (**Siemens S7, OPC UA, Modbus, MQTT**) pasan a **V1**. El **modelo de Devices y el pipeline de ingesta soportan todos los protocolos desde el día 1** (para no requerir migraciones al habilitar cada uno); lo único que cambia entre MVP y V1 es **qué adapters están activos/habilitados**: en MVP, manual + datalogger/archivo; en V1, S7/OPC UA/Modbus/MQTT. Ver [data-ingestion.md](./data-ingestion.md) y [tablero de decisiones](../open-questions-board.md).
 
 ---
 
@@ -274,6 +274,8 @@ Es la función más **diferencial** del dominio y el punto donde Nexo agrega val
 
 El **Agente Edge / Gateway** es el componente on-premise que materializa el principio *edge-first*. Su relación con Devices define el reparto plano de control (nube) vs. plano de datos (borde).
 
+> **Forma de distribución del Agente Edge — decisión cerrada (DEV-01, 2026-07-11):** el Agente se entrega como **contenedor/software** que corre sobre una **PC industrial o Raspberry Pi del cliente**, con **appliance pre-provisto opcional** para quienes prefieren hardware llave en mano; en todos los casos opera **outbound-only**. En el **MVP** el Agente procesa **datalogger y archivos** (carga/CSV/Excel); los **adapters de protocolo industrial (S7/OPC UA/Modbus/MQTT) se habilitan en V1** (ver §3 y [data-ingestion.md](./data-ingestion.md)).
+
 | Responsabilidad | Agente Edge (borde, on-premise) | Servicio Devices (nube, por tenant) |
 |---|---|---|
 | Conversar con el hardware (S7/OPC UA/Modbus/MQTT/HTTP) | ✅ | ❌ |
@@ -366,8 +368,8 @@ sequenceDiagram
 
 Devices es una superficie sensible: administra identidades de hardware que emiten datos productivos. Los principios se detallan en [security.md](./security.md), pero se anclan aquí:
 
-- **Identidad por dispositivo:** cada dispositivo tiene identidad y credenciales propias; nada emite datos sin ser reconocido y autorizado.
-- **Custodia de secretos:** claves/certificados/tokens **no** se guardan en el dominio Devices en claro; se referencian desde un gestor de secretos, con aislamiento por tenant.
+- **Identidad por dispositivo (decisión cerrada DEV-03, 2026-07-11):** cada dispositivo tiene identidad propia basada en **mTLS + tokens rotables**; el **provisioning es asistido, con opción zero-touch** para hardware estandarizado; nada emite datos sin ser reconocido y autorizado, y existe **revocación por dispositivo** para cortar una identidad comprometida sin afectar al resto.
+- **Custodia de secretos:** claves/certificados/tokens **no** se guardan en el dominio Devices en claro; se referencian desde un **gestor central de secretos (Vault/KMS)**, con aislamiento por tenant.
 - **Aislamiento multi-tenant (brief §6):** un tenant nunca ve dispositivos, señales, salud ni firmware de otro. Todo el catálogo vive en la **DB del tenant**.
 - **Comunicación outbound y cifrada:** el Agente Edge inicia conexiones salientes cifradas; no se exponen puertos entrantes en planta.
 - **Principio de mínimo privilegio:** perfiles (Integraciones, Implementador, Administrador) con permisos acotados por planta/línea (RBAC/ABAC, brief §9), y auditoría de toda alta/baja/cambio de mapeo.

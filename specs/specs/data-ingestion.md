@@ -101,7 +101,9 @@ El Agente Edge ejecuta un **adapter** por familia de protocolo/fuente. Cada adap
 | **MQTT** | Suscripción a *topics* | Push desde dispositivos IoT (ESP32/Arduino/RPi); QoS del broker; payloads heterogéneos |
 | **HTTP / API** | Push (webhook) o pull (polling) | Sistemas externos; autenticación; paginación; límites de tasa |
 | **CSV / Excel** | Importación por lote (upload o carpeta observada) | Parseo tolerante; mapeo de columnas a campos; validación de encabezados y tipos |
-| **Carga manual (Operario/Tablet)** | Formularios en app | El operario aporta contexto (orden, turno, motivo); validación en origen; trabaja offline y sincroniza |
+| **Carga manual (Operario/Tablet)** | Formularios en app | El operario aporta contexto (orden, turno, motivo); validación en origen; captura **offline-first con store-and-forward** y `dedup_key` (alineado con edge-first): la tablet persiste local y sincroniza al reconectar sin generar duplicados |
+
+> **Adapters activos en MVP vs. V1 — decisión cerrada (DEV-02, 2026-07-11):** en el **MVP** están activos los adapters de **carga manual (operario/tablet)** y **datalogger vía archivo (CSV/Excel/upload)**; los adapters de **protocolo industrial de captura automática — Siemens S7, OPC UA, Modbus, MQTT — se habilitan en V1**. El **pipeline y el modelo canónico soportan todos los protocolos desde el día 1** (sin migraciones para activarlos); lo único que cambia es qué adapters están **habilitados**. Ver [devices.md](./devices.md) y [tablero de decisiones](../open-questions-board.md).
 
 - **Extensibilidad:** nuevos protocolos se incorporan como nuevos adapters sin alterar el resto del pipeline (adapters como plugins). El catálogo de conectores/adapters oficiales y de terceros se gobierna vía Marketplace (ver [architecture.md](./architecture.md)).
 - **Tagging:** cada lectura/evento se asocia a un **tag/señal** y a un **dispositivo** del inventario de [devices.md](./devices.md), y se contextualiza con **site/line/asset** cuando aplica. Sin este mapeo, el dato se admite pero se marca como *no contextualizado* para revisión.
@@ -165,7 +167,7 @@ Antes de enrutar, cada evento atraviesa una validación en capas. Lo que no supe
 ### 5.2 Construcción de la `dedup_key`
 
 - Debe ser **determinística y estable** a lo largo de reintentos: derivada de atributos invariantes del hecho (p. ej. dispositivo/tag + timestamp de origen + secuencia), no del momento de envío.
-- Para cargas manuales, se deriva del contexto del formulario para evitar dobles registros por reenvío del operario.
+- Para cargas manuales, se deriva del contexto del formulario para evitar dobles registros por reenvío del operario; la tablet trabaja **offline-first** (store-and-forward local) y, al reconectar, reenvía con la misma `dedup_key`, de modo que la sincronización diferida no genera duplicados (decisión UX-01).
 - Para archivos (CSV/Excel), se deriva de la identidad de la fila dentro del lote para evitar reprocesar filas ya cargadas.
 
 ### 5.3 Ventana y persistencia de deduplicación
@@ -177,7 +179,7 @@ Antes de enrutar, cada evento atraviesa una validación en capas. Lo que no supe
 
 ## 6. Enrutamiento a dominios y persistencia
 
-- Tras deduplicar, el evento se **publica en el backbone** en tópicos **particionados por tenant** (y por clave de orden, p. ej. dispositivo/línea). El enrutamiento primario es por `type`:
+- Tras deduplicar, el evento se **publica en el backbone** —broker **tipo Kafka detrás de una abstracción**, agnóstico de nube y con opción de *managed* equivalente sin acoplarse a primitivas propietarias (decisión ARQ-01, ver [architecture.md](./architecture.md))— en tópicos **particionados por tenant** (y por clave de orden, p. ej. dispositivo/línea). El enrutamiento primario es por `type`:
 
 | `type` | Dominio(s) consumidor(es) principal(es) |
 |---|---|

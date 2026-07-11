@@ -20,7 +20,7 @@ Módulos de producto con documento de detalle propio. La fase indica cuándo el 
 
 | # | Módulo | Propósito | Microservicio / BC asociado | Fase | Dependencias | Persona principal |
 |---|---|---|---|---|---|---|
-| 1 | **Ingesta de datos** | Recepción multi-fuente, adapters de protocolo y normalización al Evento canónico | Ingestion / Edge Gateway | **MVP** | Dispositivos, Multi-tenancy, Seguridad | Integraciones / Operario |
+| 1 | **Ingesta de datos** | Recepción multi-fuente (manual + datalogger/CSV en MVP; protocolos industriales en V1) y normalización al Evento canónico | Ingestion / Edge Gateway | **MVP** | Dispositivos, Multi-tenancy, Seguridad | Integraciones / Operario |
 | 2 | **Dispositivos** | Dispositivos, sensores, tags/señales, salud, firmware/OTA | Devices | **MVP** | Ingesta de datos, Multi-tenancy | Mantenimiento / Integraciones |
 | 3 | **Producción** | Órdenes, registros de producción, turnos, productividad | Production | **MVP** | Ingesta de datos, Integraciones | Producción |
 | 4 | **Scrap** | Registros de scrap, motivos, costos, clasificación | Scrap | **MVP** | Producción, Ingesta de datos | Supervisor / Producción |
@@ -56,13 +56,13 @@ Bounded contexts canónicos que **respaldan** a los módulos anteriores o entran
 ## 3. Apartados por módulo
 
 ### 3.1 Ingesta de datos — `Ingestion / Edge Gateway`
-Punto de entrada de todo dato a la plataforma. Recibe desde el **Agente Edge / Gateway** (edge-first, outbound, con store-and-forward), aplica adapters de protocolo (PLC/datalogger en MVP; OPC UA/Modbus/MQTT en V1) y **normaliza al Evento canónico** (inmutable, deduplicado por `dedup_key`). También ingesta desde APIs y archivos CSV/Excel. Es el pilar 1 y 2 de producto. **Detalle:** [data-ingestion.md](./data-ingestion.md).
+Punto de entrada de todo dato a la plataforma. Recibe desde el **Agente Edge / Gateway** (edge-first, outbound-only, con store-and-forward), aplica adapters de protocolo (**datalogger y carga de archivo/CSV/Excel** en el MVP; **captura automática por protocolos industriales —Siemens S7, OPC UA, Modbus, MQTT— en V1**) y **normaliza al Evento canónico** (inmutable, deduplicado por `dedup_key`). También ingesta desde APIs y archivos CSV/Excel. El modelo de Devices/ingesta contempla los protocolos industriales desde el día uno, aunque se activan en V1. Es el pilar 1 y 2 de producto. **Detalle:** [data-ingestion.md](./data-ingestion.md).
 
 ### 3.2 Dispositivos — `Devices`
 Gestiona el inventario de **dispositivos** (PLC, ESP32, datalogger, gateway, cámara), sus **sensores** y **señales/tags**, su **salud** y el **firmware/OTA**. Provee el contexto (site/line/asset) que la ingesta usa para enriquecer eventos. **Detalle:** [devices.md](./devices.md).
 
 ### 3.3 Producción — `Production`
-Registra **órdenes de producción (Work Order/MO)**, **registros de producción** por orden/máquina/turno, **turnos** y **productividad**. Consume eventos de tipo `production` y alimenta el cálculo de OEE (Rendimiento y Calidad) y la sincronización con el ERP. **Detalle:** [production.md](./production.md).
+Registra **órdenes de producción (Work Order/MO)**, **registros de producción** por orden/máquina/turno, **turnos** y **productividad**. Consume eventos de tipo `production` y alimenta el cálculo de OEE (Rendimiento y Calidad) y la sincronización con el ERP. Es el **caso estrella del MVP** (demo end-to-end: **producción manual → dashboard → Odoo**). **Detalle:** [production.md](./production.md).
 
 ### 3.4 Scrap — `Scrap`
 Captura **registros de scrap** con **motivo (Reason Code)**, **costo** y clasificación. Alimenta el **Scrap Rate** (por piezas o por costo) y el factor Calidad del OEE. **Detalle:** [scrap.md](./scrap.md).

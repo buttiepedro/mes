@@ -147,7 +147,7 @@ Se incluye además una sección dedicada a las **fórmulas de KPI canónicas** (
 
 | Término | Definición breve | Relación |
 |---------|------------------|----------|
-| **MVP** | Primera versión con captura Producción/Scrap/Calidad/Paradas/Eventos, PLC+datalogger, tablet, dashboard tiempo real e integración Odoo. | Ver [roadmap](../roadmap/roadmap.md). |
+| **MVP** | Primera versión con captura Producción/Scrap/Calidad/Paradas/Eventos, **carga manual (tablet) + datalogger vía CSV/archivo**, dashboard en tiempo real e integración Odoo. La **captura automática por protocolos industriales (S7/OPC UA/Modbus/MQTT) llega en V1**. | Ver [roadmap](../roadmap/roadmap.md), [tablero](../open-questions-board.md). |
 | **V1 / V2 / Enterprise** | Fases sucesivas del producto (reglas y reportes → marketplace y multi-ERP → IA/visión y gemelo digital). | Ver [roadmap](../roadmap/roadmap.md), [future-features.md](./future-features.md). |
 | **MoSCoW** | Método de priorización (Must/Should/Could/Won't) usado en cada fase. | Ver [roadmap](../roadmap/roadmap.md). |
 | **SLA (Service Level Agreement)** | Acuerdo de nivel de servicio (disponibilidad, soporte) ofrecido a clientes enterprise. | Ver [open-questions.md](./open-questions.md), [security.md](./security.md). |

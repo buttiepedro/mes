@@ -114,6 +114,7 @@ KPI            Tarjeta de indicador
 - **Objetivo:** dar estado en tiempo real de la operación y los KPIs clave según rol y alcance.
 - **Usuario:** todos (contenido filtrado). **Superficie:** desktop (completo), tablet supervisor (resumen), mobile (KPIs/alertas).
 - **Enlaza a:** [dashboards.md](./dashboards.md) (KPIs y fórmulas), [ui-ux.md](./ui-ux.md).
+- **Prioridad MVP (caso estrella PRD-02):** junto con Producción (§3), esta pantalla es el corazón de la demo del MVP: **producción manual → dashboard en tiempo real → Odoo** ([tablero de decisiones](../open-questions-board.md)).
 
 ### 2.1 Layout — Desktop (vista de planta, tiempo real)
 
@@ -184,6 +185,7 @@ KPI            Tarjeta de indicador
 - **Objetivo:** registrar producción (piso) y gestionar/analizar registros y órdenes (desktop).
 - **Usuario:** Operario (captura), Supervisor/Producción (gestión). **Superficie:** tablet piso + desktop.
 - **Enlaza a:** [production.md](./production.md).
+- **Prioridad MVP (caso estrella PRD-02 / modo híbrido PRD-03):** la **captura manual desde tablet es de primera clase**, no un fallback; en el MVP la carga es **manual + datalogger/CSV** (los protocolos de captura automática llegan en V1). Esta pantalla abre el flujo estrella **producción manual → dashboard → Odoo**.
 
 ### 3.1 Layout — Tablet piso (captura guiada, flujo estrella)
 
@@ -243,7 +245,7 @@ KPI            Tarjeta de indicador
 ```
 
 - **Componentes:** panel de acciones (piso), visor numérico + teclado grande, selector de unidad, toggle buenas/rechazadas, botón confirmar; (desktop) tabla filtrable, badges de estado de dato y de sync, panel de detalle, acciones confirmar/corregir/anular, timeline.
-- **Estados:** cargando; sin orden activa (piso: bloquea con "no hay orden asignada a esta línea, avisá a tu supervisor"); offline (encola, badge pendiente); error de validación (cantidad > lo esperado → pide confirmación, D7); sin permiso (Operario no ve confirmar/anular).
+- **Estados:** cargando; sin orden activa (piso: bloquea con "no hay orden asignada a esta línea, avisá a tu supervisor"); offline (**banner de conexión siempre visible**; encola con badge **pendiente**, luego **sincronizando** y **enviado**, sin duplicar por `dedup_key`); error de validación (cantidad > lo esperado → pide confirmación, D7); sin permiso (Operario no ve confirmar/anular).
 - **Interacciones:** confirmar es acción exclusiva del Supervisor (P4/[users-permissions.md](./users-permissions.md)); corregir sujeto a ventana ABAC; anular exige motivo; registros sincronizados quedan de solo lectura.
 - **Responsive:** piso = wizard de captura minimalista; desktop = master-detail denso; mobile = solo consulta de registros (no captura masiva).
 
@@ -254,6 +256,7 @@ KPI            Tarjeta de indicador
 - **Objetivo:** ejecutar inspecciones (piso), definir planes/checklists y decidir disposiciones (desktop).
 - **Usuario:** Operario (ejecuta asignadas), Calidad (gobierna). **Superficie:** tablet + desktop.
 - **Enlaza a:** [quality.md](./quality.md).
+- **Carga manual completa desde tablet (PRD-03):** la ejecución de inspecciones y checklists se completa manualmente desde tablet como experiencia de primera clase.
 
 ### 4.1 Layout — Tablet piso (ejecutar checklist)
 
@@ -289,7 +292,7 @@ KPI            Tarjeta de indicador
 
 - **Componentes:** stepper de checklist (un ítem por pantalla en piso), campo de valor con tolerancia visible, radios OK/NO OK grandes, adjuntar foto; (desktop) lista de planes, gráfico SPC con límites de control, KPIs FPY/Cpk, panel de disposición con justificación obligatoria.
 - **Estados:** cargando; sin inspección asignada (piso: "no tenés inspecciones pendientes"); valor fuera de tolerancia (marca ●rojo + fuerza resultado NO OK o pide confirmación); disposición sin justificación (bloquea confirmar, D7); sin permiso (Operario no ve pestaña Disposiciones — P4).
-- **Interacciones:** disposición es exclusiva de Calidad; NO OK puede disparar creación de defecto y sugerir scrap; envío offline se encola.
+- **Interacciones:** disposición es exclusiva de Calidad; NO OK puede disparar creación de defecto y sugerir scrap; envío offline se encola con **banner de conexión visible** y estados **pendiente → sincronizando → enviado**.
 - **Responsive:** piso = un ítem grande por paso; desktop = análisis SPC + gestión; mobile = consulta de resultados y alertas de calidad.
 
 ---
@@ -299,6 +302,7 @@ KPI            Tarjeta de indicador
 - **Objetivo:** registrar descarte con motivo y evidencia (piso); analizar costos y causas (desktop).
 - **Usuario:** Operario (registra), Supervisor/Producción/Calidad (analizan/clasifican). **Superficie:** tablet + desktop.
 - **Enlaza a:** [scrap.md](./scrap.md).
+- **Carga manual completa desde tablet (PRD-03):** el registro de scrap con motivo, cantidad y evidencia se completa manualmente desde tablet (experiencia de primera clase).
 
 ### 5.1 Layout — Tablet piso (grilla de motivos)
 
@@ -339,7 +343,7 @@ KPI            Tarjeta de indicador
 ```
 
 - **Componentes:** grilla visual de motivos (íconos + texto), campo cantidad, foto opcional, botón confirmar; (desktop) Pareto de motivos, tarjeta de costo/rate vs meta, tabla de registros, acción "clasificar por calidad".
-- **Estados:** motivo no seleccionado (bloquea confirmar — el motivo es obligatorio); "Otro" pide texto; offline encola; sin permiso (clasificar por calidad solo rol Calidad).
+- **Estados:** motivo no seleccionado (bloquea confirmar — el motivo es obligatorio); "Otro" pide texto; offline encola con **banner de conexión siempre visible** y badge **pendiente → sincronizando → enviado** (sin duplicar, `dedup_key`); sin permiso (clasificar por calidad solo rol Calidad).
 - **Interacciones:** seleccionar motivo → cantidad → confirmar (≤ 3 toques, D2); "más" expande el catálogo completo si hay muchos motivos; el rate compara contra meta con color semántico.
 - **Responsive:** piso = grilla táctil; desktop = Pareto + costos + tabla; mobile = KPI de scrap y alerta si supera meta.
 
@@ -350,6 +354,7 @@ KPI            Tarjeta de indicador
 - **Objetivo:** registrar y cerrar paradas con motivo y tiempo real (piso); analizar MTBF/MTTR (desktop).
 - **Usuario:** Operario/Supervisor (registran), Mantenimiento (gestiona/analiza). **Superficie:** tablet + desktop.
 - **Enlaza a:** [downtime.md](./downtime.md).
+- **Carga manual completa desde tablet (PRD-03):** el registro y cierre de paradas con motivo y tiempo real se completa manualmente desde tablet.
 
 ### 6.1 Layout — Tablet piso (cronómetro + motivo)
 
@@ -390,7 +395,7 @@ KPI            Tarjeta de indicador
 ```
 
 - **Componentes:** cronómetro grande en vivo, grilla de motivos, toggle programada/no programada, botón cerrar; (desktop) tarjetas MTBF/MTTR, línea de tiempo por línea, tabla de eventos, panel de causa técnica.
-- **Estados:** parada en curso (color ●rojo persistente + cronómetro corriendo); motivo obligatorio para cerrar; offline encola con marca de tiempo local; sin permiso (registrar causa técnica solo Mantenimiento).
+- **Estados:** parada en curso (color ●rojo persistente + cronómetro corriendo); motivo obligatorio para cerrar; offline encola con marca de tiempo local, **banner de conexión visible** y estado **pendiente → sincronizando → enviado**; sin permiso (registrar causa técnica solo Mantenimiento).
 - **Interacciones:** iniciar parada arranca cronómetro automático (tiempo real, no estimado); cerrar exige motivo; Mantenimiento añade causa técnica y reparación (alimenta MTTR).
 - **Responsive:** piso = cronómetro + motivos táctiles; desktop = timeline + análisis; mobile = alerta de parada activa con [Reconocer]/[Ver] y duración en vivo.
 
@@ -649,7 +654,7 @@ KPI            Tarjeta de indicador
 
 1. **Densidad de la grilla de motivos (scrap/parada):** ¿cuántos motivos entran cómodos en piso antes de necesitar paginación/categorías? Depende del tamaño de tablet objetivo ([ui-ux.md](./ui-ux.md) PA1).
 2. **Confirmación de cantidades atípicas:** ¿qué umbral dispara la confirmación "¿seguro?" al registrar producción/scrap fuera de rango esperado? Coordinar con [production.md](./production.md).
-3. **Vista offline del dashboard:** ¿qué KPIs tienen sentido con datos cacheados y cómo comunicamos "dato al corte de hace X"? Coordinar con [dashboards.md](./dashboards.md).
+3. ✅ **Resuelto (2026-07-11):** el uso offline es una decisión cerrada (offline-first con store-and-forward y `dedup_key`); la captura, los catálogos frecuentes y la consulta de órdenes/checklists operan offline con historial acotado, y el banner de estado de conexión (que comunica el "dato al corte de hace X") permanece siempre visible — ver [tablero de decisiones](../open-questions-board.md).
 4. **Editor de mapeo ERP:** ¿ofrecemos plantillas de mapeo preconfiguradas por ERP (Odoo) para acelerar el onboarding? Coordinar con [integrations.md](./integrations.md).
 5. **Constructor de reglas — nivel de complejidad:** ¿hasta qué punto exponemos AND/OR anidados y funciones sin volverlo inusable para un no técnico? Coordinar con [rules-engine.md](./rules-engine.md).
 6. **Acciones desde push:** ¿qué acciones son seguras de ejecutar desde una notificación sin abrir la app (reconocer sí; escalar sí; disponer calidad no)? Coordinar con [notifications.md](./notifications.md) y [users-permissions.md](./users-permissions.md).

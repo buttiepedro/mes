@@ -35,14 +35,14 @@ gantt
 
     section MVP · Captura
     Fundaciones (multi-tenant, Control Plane mínimo, Identity)   :mvp1, 2026-08-01, 90d
-    Ingesta edge (PLC + datalogger) + Evento canónico            :mvp2, after mvp1, 75d
+    Ingesta datalogger/CSV/Excel + Evento canónico               :mvp2, after mvp1, 75d
     Carga manual tablet + módulos de dominio (Prod/Scrap/QC/Downtime) :mvp3, after mvp1, 90d
     Dashboard tiempo real + Conector Odoo                        :mvp4, after mvp2, 60d
     Hardening, piloto y clientes de referencia                   :mvp5, after mvp4, 45d
 
     section V1 · MES ligero
     Motor de reglas + Notificaciones multicanal                  :v1a, after mvp5, 90d
-    Protocolos completos (OPC UA/Modbus/MQTT)                    :v1b, after mvp5, 90d
+    Protocolos industriales (S7/OPC UA/Modbus/MQTT) + híbrido real :v1b, after mvp5, 90d
     Trazabilidad lote/serie + Reportes                           :v1c, after v1a, 75d
     RBAC avanzado + Observabilidad                               :v1d, after mvp5, 90d
 
@@ -82,8 +82,9 @@ flowchart LR
 ### 2.1 Objetivos
 
 - Registrar **Producción, Scrap, Controles de Calidad, Paradas y Eventos de máquina** normalizados al **Evento canónico**.
-- Capturar automáticamente desde **PLC y datalogger** vía **Agente Edge/Gateway** (edge-first, store-and-forward).
-- Permitir **carga manual desde tablets** con UX de operario.
+- Capturar desde **datalogger vía carga de archivo/CSV/Excel** y **carga manual**, normalizando al Evento canónico (el modelo de Devices/ingesta contempla los protocolos industriales desde el día uno, pero se activan en V1).
+- Permitir **carga manual desde tablets** con UX de operario (offline-first).
+- Demostrar el **caso estrella del MVP**: **producción manual → dashboard → Odoo** end-to-end.
 - Ofrecer un **dashboard en tiempo real** con KPIs base (OEE y sus factores, scrap rate).
 - **Integrar con Odoo** vía conector desacoplado con ACL.
 - Operar **multi-tenant con base de datos por tenant** y un **Control Plane mínimo** (alta de tenant en 7 pasos, licencias básicas).
@@ -97,9 +98,9 @@ flowchart LR
 | AuthN/AuthZ con claim de tenant en el token | Identity & Access | **Must** |
 | Registro de conexión de tenant (Connection Registry) | Tenant Provisioning / Control Plane | **Must** |
 | Planes/licencias básicas y límites | Administration & Licensing | **Must** |
-| Agente Edge/Gateway con adapters PLC Siemens S7 y datalogger | Ingestion / Edge Gateway | **Must** |
+| Ingesta de datalogger vía carga de archivo/CSV/Excel + carga manual | Ingestion / Edge Gateway | **Must** |
 | Normalización al Evento canónico + `dedup_key` (idempotencia) | Ingestion / Edge Gateway | **Must** |
-| Store-and-forward ante cortes de conectividad | Ingestion / Edge Gateway | **Must** |
+| Store-and-forward / offline-first ante cortes de conectividad (manual y datalogger) | Ingestion / Edge Gateway | **Must** |
 | Alta y salud básica de dispositivos y señales/tags | Devices | **Must** |
 | Registro de producción (orden/máquina/turno) | Production | **Must** |
 | Registro de scrap (motivo + cantidad + costo) | Scrap | **Must** |
@@ -114,12 +115,12 @@ flowchart LR
 | Adjuntar foto/evidencia a un registro | Files / Media | **Could** |
 | Estado de tenants/servicios en Control Plane (salud mínima) | Observability | **Could** |
 | Notificación de bienvenida al alta de tenant | Notifications | **Could** |
-| Motor de reglas, multi-ERP, marketplace, IA | (varios) | **Won't** (fase posterior) |
+| Captura automática por protocolos industriales (S7/OPC UA/Modbus/MQTT), motor de reglas, multi-ERP, marketplace, IA | (varios) | **Won't** (fase posterior) |
 
 ### 2.3 Dependencias
 
 - **Internas:** el multi-tenancy DB-per-tenant y el Control Plane mínimo son prerrequisito de todo lo demás; Identity & Access habilita el resto de servicios; el Evento canónico (Ingestion) es prerrequisito de Dashboards y del Conector Odoo.
-- **Externas:** disponibilidad de un entorno Odoo de destino; acceso de red desde el edge del cliente hacia la nube (outbound); hardware PLC Siemens S7 / datalogger en el piloto.
+- **Externas:** disponibilidad de un entorno Odoo de destino; acceso de red desde el edge del cliente hacia la nube (outbound); datalogger / archivos CSV/Excel del piloto (los PLC/protocolos industriales entran en V1).
 - **De arquitectura:** broker de mensajería (event-driven), object storage por tenant, gestión de secretos para cadenas de conexión. Ver [architecture.md](../specs/architecture.md).
 
 ### 2.4 Riesgos y mitigaciones
@@ -128,7 +129,7 @@ flowchart LR
 |---|---|---|---|
 | Complejidad del alta automatizada de DB-per-tenant (7 pasos) retrasa todo | Alto | Media | Automatizar y probar el flujo como primer hito; idempotencia y rollback por paso; ver [milestones.md](./milestones.md) |
 | Conectividad intermitente del edge causa pérdida de datos | Alto | Alta | Store-and-forward + `dedup_key` como Must; pruebas de corte de red desde el diseño |
-| Heterogeneidad de PLC dificulta el adapter Siemens S7 | Alto | Media | Acotar el MVP a S7 + datalogger; validar con hardware real del piloto temprano |
+| Formatos heterogéneos de datalogger/CSV/Excel dificultan el parseo | Medio | Media | Acotar el MVP a datalogger + CSV/Excel con plantillas; validar con archivos reales del piloto; los protocolos industriales (S7/OPC UA/Modbus/MQTT) se acotan en V1 |
 | Mapeo Odoo (objetos/direccionalidad) mal definido | Medio | Alta | Cerrar alcance de sincronización con el cliente piloto; ACL aísla el core; ver preguntas abiertas de [idea.md](../idea.md) |
 | UX de operario insuficiente → los operarios no cargan | Alto | Media | Diseño con operarios reales, pruebas en planta, mínimos toques; ver [ui-ux.md](../specs/ui-ux.md) |
 | Fuga de datos entre tenants (aislamiento) | Crítico | Baja | DB-per-tenant no negociable; resolución de tenant por claim/Registry; auditoría; ver [multi-tenancy.md](../specs/multi-tenancy.md) |
@@ -137,8 +138,9 @@ flowchart LR
 ### 2.5 Criterios de salida (Exit Criteria)
 
 - [ ] **Alta de tenant end-to-end** ejecuta los 7 pasos y deja la empresa en estado "activo" de forma automatizada y repetible.
-- [ ] **Primer dato de PLC a Odoo:** un evento capturado desde un PLC en planta se ve en el dashboard en tiempo real y se refleja en Odoo vía el conector.
-- [ ] Los **cinco registros** (producción, scrap, calidad, paradas, eventos) se capturan tanto automáticamente como por carga manual en tablet.
+- [ ] **Producción manual → dashboard → Odoo end-to-end (caso estrella):** un registro de producción cargado a mano en tablet se ve en el dashboard en tiempo real y se sincroniza con Odoo.
+- [ ] **Primer dato de datalogger/CSV a Odoo:** un evento capturado desde un datalogger (carga de archivo/CSV/Excel) se ve en el dashboard en tiempo real y se refleja en Odoo vía el conector.
+- [ ] Los **cinco registros** (producción, scrap, calidad, paradas, eventos) se capturan por **carga manual en tablet** y por **datalogger/CSV** (la captura automática por protocolos industriales se valida en V1).
 - [ ] El **dashboard** muestra OEE (con sus tres factores) y scrap rate calculados con las fórmulas canónicas, en tiempo real.
 - [ ] **Store-and-forward** demostrado: tras un corte de red simulado, ningún evento se pierde ni se duplica.
 - [ ] **Aislamiento** verificado: un tenant no puede acceder a datos de otro (prueba de penetración básica).
@@ -154,7 +156,7 @@ flowchart LR
 
 - Habilitar un **motor de reglas** (trigger-condición-acción) en tiempo real.
 - Enviar **notificaciones multicanal** con plantillas y escalado.
-- Completar los **protocolos industriales** (OPC UA, Modbus, MQTT) además de PLC/datalogger.
+- Incorporar la **captura automática por protocolos industriales** (**Siemens S7, OPC UA, Modbus, MQTT**) y habilitar el **modo híbrido real** (manual + automático por planta).
 - Entregar **reportes** on-demand y programados, exportables.
 - Implementar **trazabilidad de lote/serie** (genealogía) sobre el Event Store inmutable.
 - Elevar el control de acceso a **RBAC avanzado** con scoping por planta/línea (y ABAC donde aplique).
@@ -166,7 +168,8 @@ flowchart LR
 |---|---|---|
 | Motor de reglas trigger-condición-acción en tiempo real | Rules Engine | **Must** |
 | Notificaciones multicanal + plantillas + escalado | Notifications | **Must** |
-| Adapters OPC UA y Modbus completos | Ingestion / Edge Gateway | **Must** |
+| Agente Edge/Gateway + adapters Siemens S7, OPC UA y Modbus (captura automática) | Ingestion / Edge Gateway | **Must** |
+| Modo híbrido real (manual + automático por planta) | Ingestion / Devices | **Must** |
 | Adapter MQTT completo | Ingestion / Edge Gateway | **Should** |
 | Trazabilidad y genealogía de lote/serie | Traceability / Event Store | **Must** |
 | Reportes on-demand y programados, exportables | Reports | **Must** |
@@ -198,7 +201,8 @@ flowchart LR
 ### 3.5 Criterios de salida
 
 - [ ] Una **regla** definida por el cliente dispara una **acción/notificación** en tiempo real ante una condición de planta.
-- [ ] **OPC UA y Modbus** capturan datos de al menos un dispositivo real cada uno, normalizados al Evento canónico.
+- [ ] **Siemens S7, OPC UA y Modbus** capturan datos de al menos un dispositivo real cada uno, normalizados al Evento canónico.
+- [ ] El **modo híbrido** combina, en una misma planta, captura manual y automática por protocolo sobre el mismo Evento canónico.
 - [ ] La **genealogía de un lote/serie** se reconstruye de punta a punta desde el Event Store.
 - [ ] Un **reporte programado** se genera y exporta automáticamente con datos consistentes con el dashboard.
 - [ ] El **RBAC avanzado** restringe correctamente el acceso por planta/línea según la matriz de permisos.
@@ -324,6 +328,7 @@ Estas capacidades no pertenecen a una sola fase; se refuerzan en cada una:
 | **Observabilidad** | Salud mínima | Transversal completa | Despliegues progresivos | SLAs y failover |
 | **Seguridad** | Aislamiento + auditoría | RBAC/ABAC | Residencia de datos | Cumplimiento enterprise |
 | **Time-to-value** | Alta 7 pasos + carga manual | Reglas listas | Marketplace autoservicio | Onboarding enterprise |
+| **Empaquetado / pricing** | Base por planta (manual, Odoo, dashboard) | + Precio por dispositivo (protocolos) | Feature flags por capa/plan | Add-ons IA / por consumo |
 
 ---
 
@@ -339,10 +344,10 @@ Estas capacidades no pertenecen a una sola fase; se refuerzan en cada una:
 ## Preguntas abiertas
 
 1. **Fechas reales por fase.** El Gantt es orientativo; falta convertir la secuencia en un calendario con capacidad de equipo real y compromisos de cliente.
-2. **Alcance exacto del conector Odoo en el MVP.** ¿Qué objetos (órdenes, productos, cantidades) y en qué dirección se sincronizan? Depende del cliente piloto (ver [idea.md](../idea.md) preguntas abiertas).
+2. ✅ **Resuelto (2026-07-11):** el conector Odoo del MVP hace *pull* de MO/Producto/UoM/Motivos y *push* de producción real (avance/cierre de MO) y scrap (agregado por cierre de corrida); calidad opcional — ver [tablero de decisiones](../open-questions-board.md).
 3. **Corte MVP/V1 para trazabilidad.** ¿La captura de lote/serie se inicia ya en el MVP (aunque la genealogía completa sea V1) para evitar backfills costosos?
 4. **Orden interno de V2.** ¿Multi-ERP antes que Marketplace, o Marketplace primero para habilitar conectores de terceros que aceleren el multi-ERP?
 5. **Criterio de entrada a Enterprise.** ¿Qué masa de datos/clientes se requiere para que la IA sea viable y no una promesa? Debe definirse un umbral objetivo.
-6. **Modelo de precios por fase.** ¿Cómo se monetiza cada capa (captura vs. MES vs. IA) y cómo impacta en la priorización MoSCoW? Coordinar con [product.md](../specs/product.md).
+6. ✅ **Resuelto (2026-07-11):** cada capa se monetiza como **suscripción base por planta + precio por dispositivo conectado**, con módulos empaquetados por capa vía feature flags (Captura base → MES ligero V1 → IA Enterprise) y add-ons por consumo — ver [tablero de decisiones](../open-questions-board.md).
 7. **Gestión de "Won't" que se vuelven urgentes.** ¿Qué proceso reevalúa una capacidad diferida si un cliente estratégico la exige antes de tiempo, sin romper la disciplina de fases?
 8. **Deuda técnica entre fases.** ¿Cómo se reserva capacidad para hardening/refactor entre fases para no comprometer la escala diseñada?

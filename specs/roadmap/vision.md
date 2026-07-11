@@ -80,7 +80,7 @@ El horizonte de tres años traza la transición de **producto de captura** a **p
 timeline
     title Panorama estratégico Nexo — 3 años
     section Año 1 · Capturar y probar valor
-        MVP en producción : Captura Producción/Scrap/Calidad/Paradas/Eventos : PLC + datalogger + carga manual tablet : Dashboard tiempo real : Integración Odoo : Multi-tenant DB-per-tenant + Control Plane mínimo
+        MVP en producción : Captura Producción/Scrap/Calidad/Paradas/Eventos : Carga manual (tablet) + datalogger/CSV : Dashboard tiempo real : Integración Odoo : Multi-tenant DB-per-tenant + Control Plane mínimo
         Primeros clientes de referencia : Casos en 1-2 industrias : Prueba objetiva de reducción de carga manual
     section Año 2 · Consolidar el MES ligero
         V1 : Motor de reglas + notificaciones multicanal : OPC UA/Modbus/MQTT completos : Reportes + trazabilidad lote/serie : RBAC avanzado + observabilidad
@@ -92,7 +92,7 @@ timeline
 
 | Año | Tema estratégico | Qué debe ser verdad al final del año |
 |---|---|---|
-| **Año 1** | **Capturar y probar el valor** | El MVP está en producción con clientes de referencia; se demuestra objetivamente la reducción de carga manual; el Evento canónico fluye de PLC/datalogger/tablet a dashboard y a Odoo. |
+| **Año 1** | **Capturar y probar el valor** | El MVP está en producción con clientes de referencia; se demuestra objetivamente la reducción de carga manual; el Evento canónico fluye de **datalogger/CSV y carga manual (tablet)** a dashboard y a Odoo (los protocolos industriales/PLC se incorporan en V1). |
 | **Año 2** | **Consolidar el MES ligero y abrir el ecosistema** | Nexo automatiza decisiones (reglas), notifica, reporta y traza lote/serie; soporta más protocolos y más de un ERP; el Marketplace y los feature flags habilitan crecimiento sin fricción. |
 | **Año 3** | **Plataforma industrial con IA** | Sobre la capa de datos se construye inteligencia (visión, predicción, gemelo digital); Nexo opera con SLAs enterprise y multi-región; un ecosistema de partners extiende la plataforma. |
 
@@ -164,7 +164,7 @@ flowchart LR
 ```
 
 ### 5.1 Capa 1 — Captura (MVP): "el dato deja de cargarse a mano"
-Nexo entra como **la capa única de captura**. Registra producción, scrap, calidad, paradas y eventos; captura desde PLC y datalogger; permite carga manual en tablet; muestra un dashboard en tiempo real; sincroniza con Odoo; opera multi-tenant con DB-per-tenant y un Control Plane mínimo. El resultado tangible: **la planta deja de retipear**. (Detalle en [roadmap.md](./roadmap.md) fase MVP.)
+Nexo entra como **la capa única de captura**. Registra producción, scrap, calidad, paradas y eventos; en el MVP captura desde **datalogger/CSV** y permite **carga manual en tablet** (de primera clase); muestra un dashboard en tiempo real; sincroniza con Odoo; opera multi-tenant con DB-per-tenant y un Control Plane mínimo. La **captura automática por protocolos industriales (S7/OPC UA/Modbus/MQTT) llega en V1**. El resultado tangible: **la planta deja de retipear**. (Detalle en [roadmap.md](./roadmap.md) fase MVP.)
 
 ### 5.2 Capa 2 — MES ligero (V1–V2): "el dato dispara acciones y se abre al ecosistema"
 Sobre la captura se agrega inteligencia operativa: **motor de reglas** (trigger-condición-acción), **notificaciones multicanal**, **trazabilidad de lote/serie**, **reportes** y **analytics**, más protocolos (OPC UA/Modbus/MQTT completos), **RBAC avanzado** y **observabilidad**. Luego el ecosistema: **Marketplace de conectores**, **multi-ERP** (SAP/Dynamics/Oracle), **feature flags** y **distribución geográfica de DBs**. Nexo pasa de *ver* a *actuar* y de *un ERP* a *muchos*.

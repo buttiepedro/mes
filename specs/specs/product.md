@@ -121,12 +121,13 @@ Los dominios de negocio capturados sobre estos pilares son **Producción, Scrap,
 ### 6.1 Dentro del MVP (canónico)
 
 - **Registrar:** Producción, Scrap, Controles de Calidad, Paradas y Eventos de máquina.
-- **Capturar desde:** PLCs y Dataloggers.
-- **Carga manual desde tablets** (UX de operario).
+- **Capturar desde:** carga manual (tablet) + datalogger vía carga de archivo/CSV/Excel.
+- **Carga manual desde tablets** (UX de operario) — **caso estrella: Producción + dashboard**.
 - **Dashboard en tiempo real.**
 - **Integración con Odoo.**
 - **Multi-tenant con base de datos por tenant.**
 - **Control Plane mínimo:** alta de tenant y licencias.
+- **Modo híbrido configurable (por planta):** en el MVP el híbrido se limita a **manual + datalogger/CSV**; el híbrido con **protocolos industriales** se vuelve real en V1.
 
 ### 6.2 Explícitamente fuera del MVP
 
@@ -135,9 +136,9 @@ Los dominios de negocio capturados sobre estos pilares son **Producción, Scrap,
 - Marketplace público de conectores.
 - Multi-ERP simultáneo avanzado (SAP/Dynamics/Oracle).
 - Gemelo digital.
-- (Diferidos a V1/V2: motor de reglas completo, notificaciones multicanal, OPC UA/Modbus/MQTT completos, reportes avanzados, trazabilidad lote/serie completa, RBAC avanzado, observabilidad avanzada — ver §10 y [roadmap.md](../roadmap/roadmap.md)).
+- (Diferidos a V1/V2: **captura automática por protocolos industriales (Siemens S7, OPC UA, Modbus, MQTT)**, motor de reglas completo, notificaciones multicanal, reportes avanzados, trazabilidad lote/serie completa, RBAC avanzado, observabilidad avanzada — ver §10 y [roadmap.md](../roadmap/roadmap.md)).
 
-> **Principio de MVP:** el operario puede **cargar manual desde el día uno** (time-to-value inmediato) mientras se habilita la captura automática desde PLC/datalogger; el dato fluye al dashboard y a Odoo.
+> **Principio de MVP:** el operario puede **cargar manual desde el día uno** (time-to-value inmediato) y sumar el **datalogger vía carga de archivo/CSV/Excel**; la **captura automática por protocolos industriales** llega en V1. El dato fluye al dashboard y a Odoo. **Demo end-to-end del MVP: producción manual → dashboard → Odoo.**
 
 ---
 
@@ -204,7 +205,7 @@ Métricas de producto organizadas por etapa del ciclo de vida del cliente. Los u
 |---|---|---|
 | **Time-to-value** | Tiempo desde alta hasta el primer KPI confiable en el dashboard | ≤ 1 semana |
 | **Time-to-integration (Odoo)** | Tiempo hasta el primer sync exitoso con Odoo | ≤ 2 semanas |
-| **Time-to-automation** | Tiempo hasta la primera captura automática desde PLC/datalogger | ≤ 4 semanas |
+| **Time-to-automation** | Tiempo hasta la primera captura automática por protocolo industrial (V1) | ≤ 4 semanas |
 
 > La definición operativa de "reducción de carga manual" es una **pregunta abierta** (ver [idea.md](../idea.md) y §Preguntas abiertas).
 
@@ -212,32 +213,32 @@ Métricas de producto organizadas por etapa del ciclo de vida del cliente. Los u
 
 ## 9. Modelo de licenciamiento y monetización (alto nivel)
 
-Modelo **SaaS por suscripción**, con planes escalonados y **límites por usuarios, dispositivos y plantas**. La gestión de planes, licencias, feature flags, límites y facturación reside en el **Control Plane** (servicio *Administration & Licensing*), coherente con [control-plane.md](./control-plane.md). Los límites se **hacen cumplir** a nivel de plan y se reflejan en el alta y operación del tenant.
+Modelo **SaaS por suscripción** con dos ejes principales: una **suscripción base por planta** —que cubre captura manual, usuarios, integración Odoo y dashboard en tiempo real— y un **precio por dispositivo conectado**, eje central de escalado cuando entra la **captura automática** (protocolos industriales, V1). Sobre esa base, los **módulos se empaquetan por capa** vía **feature flags** (Captura base → MES ligero (V1) → IA Enterprise). El escenario **100% manual paga la base por planta**; los **add-ons por consumo** son posibles. La gestión de la base por planta, el precio por dispositivo, feature flags, límites y facturación reside en el **Control Plane** (servicio *Administration & Licensing*), coherente con [control-plane.md](./control-plane.md). Los límites se **hacen cumplir** y se reflejan en el alta y operación del tenant.
 
-### 9.1 Planes (referenciales, a validar)
+### 9.1 Ejes de precio
 
-| Plan | Público objetivo | Plantas | Usuarios | Dispositivos | Integración ERP | Fuentes | Soporte |
-|---|---|---|---|---|---|---|---|
-| **Starter** | Taller / 1 línea | 1 | Hasta ~10 | Hasta ~5 | Odoo (básica) | Carga manual + datalogger | Comunidad/estándar |
-| **Growth** | Pyme industrial | Hasta ~3 | Hasta ~50 | Hasta ~50 | Odoo (completa) | + PLC (Siemens S7) | Estándar |
-| **Business** | Media empresa multi-línea | Hasta ~10 | Hasta ~200 | Hasta ~300 | Odoo + roadmap multi-ERP | + OPC UA/Modbus/MQTT | Prioritario |
-| **Enterprise** | Multi-planta / corporativo | A medida | A medida | Miles | Multi-ERP | Todas + IA/visión (fase) | SLA dedicado |
+| Eje | Qué cubre | Cómo escala |
+|---|---|---|
+| **Suscripción base por planta** | Captura manual, usuarios, integración Odoo y dashboard en tiempo real | Por cada planta activa; el escenario 100% manual paga solo esta base |
+| **Precio por dispositivo conectado** | Captura automática por dispositivo/fuente industrial | Eje principal de escalado al activar los protocolos industriales (V1) |
+| **Módulos por capa (feature flags)** | Habilitación de capas de producto | Captura base (MVP) → MES ligero (V1) → IA (Enterprise) |
+| **Add-ons por consumo** | Retención extendida, conectores premium (marketplace), plantas/usuarios adicionales | Cobro por consumo/uso sobre la base |
 
-> Los valores de límites son **referenciales** y sujetos a validación comercial; la fuente de verdad de límites vigentes es el Control Plane. Add-ons potenciales: dispositivos/plantas adicionales, conectores premium (marketplace), retención de datos extendida, módulos avanzados (reglas, reportes, IA).
+> Los precios concretos (base por planta, por dispositivo) y los límites son **referenciales** y sujetos a validación comercial; la fuente de verdad vigente es el Control Plane.
 
-### 9.2 Ejes de monetización y palancas
+### 9.2 Capas empaquetadas por feature flag
 
-| Eje | Descripción |
-|---|---|
-| **Suscripción base por plan** | Precio recurrente según plan y límites incluidos. |
-| **Consumo / límites** | Cobro por plantas, usuarios y dispositivos por encima del plan. |
-| **Módulos y feature flags** | Módulos avanzados habilitados por licencia (reglas, reportes, IA/visión). |
-| **Marketplace de conectores** | Conectores oficiales/terceros (fase V2) con revenue share a partners. |
-| **Servicios de implementación** | Onboarding, integración y soporte premium (rol Implementador/Partner). |
+| Capa | Contenido | Fase |
+|---|---|---|
+| **Captura base** | Captura manual + datalogger/CSV, Odoo, dashboard en tiempo real, multi-tenant | MVP |
+| **MES ligero** | Protocolos industriales (S7/OPC UA/Modbus/MQTT) + híbrido real, reglas, notificaciones, trazabilidad, reportes | V1 |
+| **IA Enterprise** | IA/visión, mantenimiento predictivo, gemelo digital | Enterprise |
+
+> Las capas se habilitan por **feature flags** en el Control Plane; el **modo híbrido configurable** (manual + automático por planta) se cobra sumando la **base por planta** y los **dispositivos conectados**. Palancas complementarias: **Marketplace de conectores** (fase V2, revenue share a partners) y **servicios de implementación** (rol Implementador/Partner).
 
 ### 9.3 Coherencia con Control Plane
 
-- **Planes, licencias, feature flags, límites y facturación** los administra *Administration & Licensing* en la Control Plane DB.
+- **Base por planta, precio por dispositivo, feature flags de capa, límites y facturación** los administra *Administration & Licensing* en la Control Plane DB.
 - El **alta de tenant** (7 pasos) fija plan y estado inicial; los límites por usuarios/dispositivos/plantas se aplican desde el provisioning (ver [control-plane.md](./control-plane.md) y [multi-tenancy.md](./multi-tenancy.md)).
 - El **Marketplace** (fase V2) gobierna el catálogo de conectores y su monetización.
 
@@ -249,7 +250,7 @@ Alineada al roadmap canónico (MVP, V1, V2, Enterprise). Detalle, prioridades Mo
 
 | Módulo | MVP | V1 | V2 | Enterprise |
 |---|:---:|:---:|:---:|:---:|
-| Ingesta de datos (PLC + datalogger + manual) | ● núcleo | ◐ + OPC UA/Modbus/MQTT | ◐ | ◐ |
+| Ingesta de datos (manual + datalogger/CSV) | ● núcleo | ◐ + protocolos (S7/OPC UA/Modbus/MQTT) | ◐ | ◐ |
 | Dispositivos | ● básico | ◐ salud/OTA | ◐ | ◐ |
 | Producción | ● | ◐ | ◐ | ◐ |
 | Scrap | ● | ◐ | ◐ | ◐ |
@@ -275,9 +276,9 @@ Alineada al roadmap canónico (MVP, V1, V2, Enterprise). Detalle, prioridades Mo
 ## Preguntas abiertas
 
 1. **Definición y medición de "reducción de carga manual":** ¿qué línea base tomamos por tenant y cómo la instrumentamos para probar la métrica estrella?
-2. **Estructura de planes y límites concretos:** los valores de plantas/usuarios/dispositivos son referenciales; falta validación comercial y su fijación en Control Plane.
-3. **Empaquetado de módulos vs. planes:** ¿qué módulos van incluidos por plan y cuáles se venden como add-on/feature flag (reglas, reportes, IA)?
-4. **Pricing manual vs. automático:** ¿diferenciamos precio entre tenants de solo carga manual y los que integran hardware/dispositivos?
+2. **Precios y límites concretos:** los valores de la base por planta, el precio por dispositivo y los límites por usuarios/plantas son referenciales; falta validación comercial y su fijación en Control Plane.
+3. ✅ **Resuelto (2026-07-11):** los módulos se empaquetan **por capa vía feature flags** (Captura base → MES ligero V1 → IA Enterprise); los avanzados se habilitan como capa/add-on sobre la base por planta — ver [tablero de decisiones](../open-questions-board.md).
+4. ✅ **Resuelto (2026-07-11):** el pricing distingue manual vs. automático: la **base por planta** cubre el 100% manual y el **precio por dispositivo conectado** escala con la captura automática — ver [tablero de decisiones](../open-questions-board.md).
 5. **Persona "Integraciones" en pymes chicas:** ¿existe ese rol en el segmento Starter o lo cubre el Administrador/Implementador?
 6. **Métrica de NRR/retención:** objetivos de retención y expansión aún sin validar con datos reales.
 7. **Frontera de personas Mantenimiento vs. Producción:** ¿cómo se reparten paradas/MTBF entre ambas personas en el MVP vs. V1?

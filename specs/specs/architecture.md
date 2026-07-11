@@ -36,7 +36,7 @@ Los siguientes principios son la traducción directa de los fundamentos canónic
 
 ### 1.3 Event-driven
 
-- El **backbone de mensajería asíncrona** (broker tipo Kafka/RabbitMQ, tech-agnóstico) es la **columna vertebral** de la plataforma. La captura, normalización y distribución del dato fluyen como **eventos**.
+- El **backbone de mensajería asíncrona** —broker **tipo Kafka detrás de una abstracción** (decisión ARQ-01), que admite un **managed equivalente** sin acoplarse a primitivas propietarias de un proveedor (agnóstico de nube)— es la **columna vertebral** de la plataforma. La captura, normalización y distribución del dato fluyen como **eventos**.
 - El **Evento canónico** (sección 8.1 del brief) es la unidad normalizada del sistema: inmutable una vez ingerido, con `event_id`, `tenant_id`, `timestamp`, `source`, `type`, `payload` normalizado, `dedup_key` y `origin_metadata`.
 - Los dominios reaccionan a eventos de forma desacoplada: publicar un evento de producción no requiere conocer quién lo consume (Dashboards, Trazabilidad, Reglas, Integraciones pueden reaccionar en paralelo).
 - Se aplican **garantías at-least-once + idempotencia** en el consumo (ver [data-ingestion.md](./data-ingestion.md)).
@@ -136,7 +136,7 @@ flowchart TB
             REG["Tenant Connection Registry"]
         end
 
-        BROKER["Backbone de eventos\n(broker tipo Kafka/RabbitMQ)"]
+        BROKER["Backbone de eventos\n(broker tipo Kafka tras abstracción,\nagnóstico de nube)"]
     end
 
     subgraph STORAGE["Almacenamiento"]
@@ -229,7 +229,7 @@ Se usa comunicación sincrónica cuando el llamador **necesita una respuesta inm
 
 ### 4.3 Asíncrono: backbone de eventos
 
-- El **broker de eventos** (tipo Kafka/RabbitMQ, tech-agnóstico) es la vía preferente de integración entre dominios.
+- El **broker de eventos** —**tipo Kafka detrás de una abstracción**, agnóstico de nube y con opción de **managed equivalente** sin acoplarse a primitivas propietarias (decisión ARQ-01)— es la vía preferente de integración entre dominios.
 - **Patrones soportados:**
   - *Event notification* / *event-carried state transfer*: los dominios publican hechos con el estado necesario para que los consumidores reaccionen sin volver a consultar.
   - *Publish/subscribe*: múltiples consumidores independientes (Dashboards, Trazabilidad, Reglas, Integraciones, Audit) reaccionan al mismo evento.
@@ -349,8 +349,8 @@ El modelo es **base de datos por tenant** (database-per-tenant), requisito **NO 
 ### 8.2 Observabilidad (principio canónico 8)
 
 - **Tres pilares:** logs estructurados, métricas y trazas distribuidas, centralizadas en el servicio **Observability** del Control Plane.
-- **Correlación:** propagación de *trace/context id* y `tenant_id` a lo largo de todo el flujo (Gateway → Ingestion → broker → dominios), para diagnóstico de extremo a extremo por tenant.
-- **Estado de plataforma:** Observability monitorea estado de tenants, servicios, conectores y salud del edge/dispositivos; alimenta el Control Plane y las alertas operativas del proveedor.
+- **Correlación:** propagación de *trace/context id* y **trazas por `tenant_id`** a lo largo de todo el flujo (Gateway → Ingestion → broker → dominios), para diagnóstico de extremo a extremo por tenant.
+- **Observabilidad del Control Plane (decisión OPS-01, 2026-07-11):** se apoya en **métricas agregadas + salud por tenant/edge** —conectividad, **backlog de store-and-forward** y estado de **conectores/sync**—, con **alertas proactivas** ante degradación y trazas correlacionadas por `tenant_id`. El Control Plane observa el estado agregado de tenants, servicios, conectores y edge/dispositivos **sin acceder al dato operativo** del cliente, y alimenta las alertas operativas del proveedor.
 - **SLOs por servicio** y presupuestos de error; *dashboards* de salud internos (distintos de los dashboards de negocio del tenant).
 
 ---
@@ -421,7 +421,7 @@ Registro de decisiones significativas. Cada una documenta contexto, alternativas
 | # | Decisión | Contexto | Alternativas | Elección | Consecuencias |
 |---|---|---|---|---|---|
 | ADR-01 | Microservicios con DDD, NO monolito | Perfiles de carga y cadencias muy distintos entre captura, dominios y reportes; necesidad de despliegue y escala independientes | Monolito modular; monolito distribuido; microservicios | Microservicios por bounded context | (+) Escala y despliegue independientes, aislamiento de fallos. (−) Mayor complejidad operativa, observabilidad y consistencia distribuida a resolver |
-| ADR-02 | Backbone de eventos asíncrono como columna vertebral | Millones de eventos/día, picos, múltiples consumidores del mismo hecho | Solo REST sincrónico; base compartida; ETL batch | Broker de eventos (Kafka/RabbitMQ, tech-agnóstico) | (+) Desacople, buffering de picos, pub/sub, reproceso. (−) Consistencia eventual; requiere idempotencia, outbox y manejo de orden |
+| ADR-02 | Backbone de eventos asíncrono como columna vertebral | Millones de eventos/día, picos, múltiples consumidores del mismo hecho | Solo REST sincrónico; base compartida; ETL batch | Broker **tipo Kafka detrás de una abstracción** (ARQ-01); *managed* equivalente admitido, sin primitivas propietarias (agnóstico de nube) | (+) Desacople, buffering de picos, pub/sub, reproceso, portabilidad multi-nube. (−) Consistencia eventual; requiere idempotencia, outbox y manejo de orden |
 | ADR-03 | Base de datos por tenant (database-per-tenant) | Requisito NO negociable de aislamiento total y particionamiento natural | Shared DB (discriminador); schema-per-tenant; DB-per-tenant | DB-per-tenant | (+) Aislamiento máximo, sharding natural, migración/geo por tenant. (−) Mayor overhead de aprovisionamiento y migraciones (mitigado por Tenant Provisioning) |
 | ADR-04 | Captura edge-first, outbound-only con store-and-forward | PLC/OPC UA/Modbus on-premise, cortes de conectividad, sin exponer planta | Polling desde la nube; VPN entrante; edge outbound | Agente Edge outbound + buffer local | (+) Sin pérdida de datos en cortes, mínima superficie de ataque. (−) Gestión de flota de agentes, OTA y reconciliación de orden/duplicados |
 | ADR-05 | CQRS con read models para dashboards/reportes | Tiempo real y reportes pesados sin degradar la escritura | Consultar tablas transaccionales directamente | CQRS: read models materializados desde eventos | (+) Lectura de baja latencia, escala independiente. (−) Consistencia eventual entre escritura y lectura; reconstrucción de vistas |
@@ -449,7 +449,7 @@ Registro de decisiones significativas. Cada una documenta contexto, alternativas
 
 ## Preguntas abiertas
 
-1. **Broker concreto:** ¿Kafka (log particionado, ideal para reproceso y alto throughput) o RabbitMQ (routing flexible) como implementación de referencia, o soporte de ambos detrás de una abstracción? Impacta orden, retención y reproceso.
+1. ✅ **Resuelto (2026-07-11):** el backbone de mensajería es un **broker tipo Kafka detrás de una abstracción**, agnóstico de nube; se admite un **managed equivalente** sin acoplarse a primitivas propietarias (decisión ARQ-01) — ver [tablero de decisiones](../open-questions-board.md).
 2. **Estrategia de orden y reloj:** ¿Se adopta ordenamiento por partición de tenant/dispositivo con reconciliación por `timestamp` de origen, y cómo se maneja la deriva de reloj del edge? (coordinar con [data-ingestion.md](./data-ingestion.md)).
 3. **Límite de granularidad de servicios:** ¿Scrap y Downtime podrían iniciar como módulos dentro de Production en el MVP y separarse luego, o se despliegan como servicios propios desde el día uno?
 4. **Sagas vs. coreografía:** ¿Qué flujos multi-dominio (p. ej. cierre de orden que impacta Producción, Scrap y Trazabilidad) justifican una saga orquestada frente a coreografía por eventos?

@@ -151,6 +151,8 @@ Nexo reutiliza **patrones de pantalla** para consistencia y velocidad de diseño
 
 Cada flujo describe **objetivo, superficie, pasos y el porqué de las decisiones**. Los roles y sus permisos son los de [users-permissions.md](./users-permissions.md).
 
+> **Decisión cerrada (2026-07-11) — modo híbrido y caso estrella (PRD-03/PRD-02):** la captura convive en **modo híbrido configurable por planta** (manual + automático). En el **MVP** la captura es **manual + datalogger/CSV**; los protocolos industriales de captura automática llegan en **V1**. Por eso la **UX de captura manual es de primera clase, no un fallback**: las pantallas de **Producción, Scrap, Calidad y Paradas** soportan **carga manual completa desde tablet**. El **caso estrella** es **Producción + dashboard en tiempo real**: la demo del MVP recorre **producción manual → dashboard → Odoo**, y esas pantallas se priorizan. Ver [tablero de decisiones](../open-questions-board.md).
+
 ### 5.1 Operario — registrar producción (flujo estrella)
 - **Objetivo:** dejar registrada la cantidad producida con el mínimo esfuerzo y sin papel.
 - **Superficie:** tablet en kiosco a pie de línea.
@@ -233,6 +235,7 @@ La tablet de piso es donde se gana o se pierde la promesa de "eliminar la carga 
 - **Por qué:** las plantas tienen iluminación extrema (naves oscuras o sol directo, polvo, vapor); una interfaz de bajo contraste es ilegible. La tablet suele estar montada y se lee a 60–80 cm, no en la mano (D8/D9).
 
 ### 6.4 Operación offline / store-and-forward
+- **Decisión cerrada (2026-07-11) — UX-01:** la captura en tablet es **offline-first con store-and-forward y `dedup_key`** (no es una opción, es el modo por defecto). Operan **offline** la **captura**, los **catálogos frecuentes** y la **consulta de órdenes/checklists** con **historial acotado** en el dispositivo; el **banner de estado de conexión permanece siempre visible**. Ver [tablero de decisiones](../open-questions-board.md).
 - **Qué:** la app captura, valida localmente, **encola** y muestra "pendiente de envío"; al recuperar red, sincroniza en orden y reconcilia con **dedup_key** para no duplicar. Banner de conexión siempre visible.
 - **Por qué:** la conectividad de planta es intermitente; el requisito arquitectónico es edge-first con store-and-forward. Si la app dependiera de red, el operario volvería al papel en el primer corte y se perdería el dato (D4/D10). La deduplicación evita el doble registro cuando el operario reintenta ante la duda.
 
@@ -326,7 +329,7 @@ Accesibilidad en Nexo es **usabilidad para el peor caso**, que en planta es el c
 2. **Login de piso definitivo:** ¿PIN, badge/NFC, biometría? Impacta directamente el flujo estrella y se coordina con MFA de [users-permissions.md](./users-permissions.md).
 3. **Grado de personalización por tenant:** ¿hasta dónde llega el white-label sin comprometer la semántica de estado ni la mantenibilidad del Design System?
 4. **Densidad configurable en desktop:** ¿ofrecemos modos "cómodo/compacto" para powerusers o fijamos una densidad? Trade-off entre flexibilidad y consistencia.
-5. **Alcance del uso offline:** ¿qué módulos, además de captura, deben operar offline (consulta de órdenes, checklists)? ¿Cuánto historial se cachea en el dispositivo?
+5. ✅ **Resuelto (2026-07-11):** la captura en tablet es offline-first con store-and-forward y `dedup_key`; además de la captura, operan offline los catálogos frecuentes y la consulta de órdenes/checklists con historial acotado, y el banner de estado de conexión permanece siempre visible — ver [tablero de decisiones](../open-questions-board.md).
 6. **Estándar de accesibilidad comprometido:** ¿fijamos WCAG 2.1 AA contractualmente para todas las superficies, con extensiones industriales, o AAA en piso? Impacta esfuerzo y QA.
 7. **Multi-operario simultáneo en una estación:** ¿una tablet = un operario por vez, o soporta captura de varios operarios en una misma estación/turno? Impacta modelo de sesión y atribución.
 8. **Notificaciones móviles y ruido de alertas:** ¿cómo evitamos la fatiga de alertas (alert fatigue) en mobile sin ocultar lo crítico? Coordinar con [rules-engine.md](./rules-engine.md) y [notifications.md](./notifications.md).

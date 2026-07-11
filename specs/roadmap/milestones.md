@@ -10,7 +10,7 @@ Este documento descompone las fases del [roadmap](./roadmap.md) en **hitos concr
 
 Los hitos se organizan por fase (**MVP → V1 → V2 → Enterprise**) y comparten un principio: **si el criterio de aceptación no se puede demostrar de forma objetiva, el hito no está cumplido.** Nada de "casi listo": cada criterio describe una condición observable (un flujo que corre, un dato que llega, un KPI que coincide con su fórmula canónica, un aislamiento que se verifica).
 
-Dos hitos son **faro** del MVP y se destacan por su valor probatorio: **"Alta de tenant end-to-end (7 pasos)"** —que demuestra el modelo multi-tenant DB-per-tenant y el time-to-value— y **"Primer dato de PLC a Odoo"** —que demuestra la propuesta de valor central de punta a punta: capturar en la máquina, normalizar al Evento canónico, mostrar en tiempo real y sincronizar con el ERP sin carga manual. Ambos se detallan de forma ampliada en las secciones §2.1 y §2.2.
+Dos hitos son **faro** del MVP y se destacan por su valor probatorio: **"Alta de tenant end-to-end (7 pasos)"** —que demuestra el modelo multi-tenant DB-per-tenant y el time-to-value— y **"Producción manual → dashboard → Odoo (end-to-end)"** —que demuestra la propuesta de valor central: capturar en planta (carga manual o datalogger/CSV), normalizar al Evento canónico, mostrar en tiempo real y sincronizar con el ERP sin doble carga. El hito **"Primer dato de PLC a Odoo"** (captura automática por protocolo industrial) pasa a **V1**. Ambos hitos faro del MVP se detallan de forma ampliada en las secciones §2.1 y §2.2.
 
 ---
 
@@ -48,21 +48,21 @@ flowchart TD
 
 **Criterio de aceptación:** desde una solicitud de alta, el sistema ejecuta los **7 pasos** sin intervención manual; al finalizar, existe una **DB dedicada** con esquema migrado y seed cargado, un **usuario administrador** operativo, la **conexión registrada** en el Connection Registry, y la empresa en estado **"activo"** con notificación de bienvenida enviada. El flujo es **idempotente** (reejecutar no duplica) y admite **rollback** si un paso falla. Un tenant recién creado **no ve datos** de ningún otro.
 
-### 2.2 M-MVP-10 · Primer dato de PLC a Odoo
+### 2.2 M-MVP-10 · Producción manual → dashboard → Odoo (end-to-end)
 
-**Por qué es faro:** prueba la **propuesta de valor central** de punta a punta y elimina la carga manual: el dato nace en la máquina y llega a la gestión sin retipeo.
+**Por qué es faro:** prueba la **propuesta de valor central del MVP** de punta a punta y elimina la doble carga: el dato se registra una sola vez en planta (carga manual o datalogger/CSV) y llega a la gestión sin retipeo. Es el **caso estrella del MVP**.
 
 ```mermaid
 flowchart LR
-    PLC[PLC Siemens S7 en planta] --> GW[Agente Edge / Gateway<br/>store-and-forward]
-    GW --> ING[Ingestion / Edge Gateway]
+    OP[Producción manual en tablet] --> ING[Ingestion / Edge Gateway]
+    DL[Datalogger / CSV / Excel] --> ING
     ING --> EVT[(Evento canónico<br/>dedup_key)]
     EVT --> DASH[Dashboard tiempo real]
     EVT --> ACL[Conector Odoo + ACL]
     ACL --> ODOO[Odoo]
 ```
 
-**Criterio de aceptación:** una lectura/contador de un **PLC Siemens S7** real es capturada por el **Agente Edge/Gateway**, normalizada a un **Evento canónico** (con `origin_metadata` y `dedup_key`), **visible en el dashboard en tiempo real** en segundos, y **reflejada en Odoo** vía el conector con ACL. Ante un corte de red simulado entre el edge y la nube, el evento **no se pierde ni se duplica** (store-and-forward + idempotencia).
+**Criterio de aceptación:** un registro de producción **cargado manualmente en tablet** (o desde un **datalogger vía carga de archivo/CSV/Excel**) se normaliza a un **Evento canónico** (con `origin_metadata` y `dedup_key`), es **visible en el dashboard en tiempo real** en segundos, y se **refleja en Odoo** vía el conector con ACL (*push* de producción real). Offline-first: ante conectividad intermitente, el evento **no se pierde ni se duplica** (store-and-forward + idempotencia). La **captura automática por protocolos industriales** (hito **"Primer dato de PLC a Odoo"**) es un hito de **V1** (ver §4).
 
 ---
 
@@ -74,14 +74,14 @@ flowchart LR
 | **M-MVP-02** · Alta de tenant end-to-end (7 pasos) | MVP | Provisioning automatizado (ver §2.1) | Los 7 pasos corren sin intervención, idempotentes, con rollback; empresa en "activo"; sin fuga entre tenants | M-MVP-01 |
 | **M-MVP-03** · Identity & Access | MVP | AuthN/AuthZ con claim de tenant | Un usuario se autentica y recibe token con claim de tenant; el acceso a un recurso de otro tenant se deniega | M-MVP-01 |
 | **M-MVP-04** · Licencias y planes básicos | MVP | Administration & Licensing mínimo | Un tenant tiene un plan con límites; superar un límite se bloquea o registra según política | M-MVP-02 |
-| **M-MVP-05** · Agente Edge/Gateway (PLC S7 + datalogger) | MVP | Edge con adapters S7 y datalogger, outbound | El agente lee de un PLC S7 y de un datalogger reales y envía a la nube en modo outbound | M-MVP-01 |
+| **M-MVP-05** · Ingesta datalogger/CSV + carga de archivo | MVP | Ingesta de datalogger vía carga de archivo/CSV/Excel (outbound) | Se ingesta un archivo de datalogger (CSV/Excel) real y se normaliza al Evento canónico; el modelo de Devices/ingesta contempla los protocolos industriales desde el día uno (se activan en V1) | M-MVP-01 |
 | **M-MVP-06** · Evento canónico + idempotencia | MVP | Normalización + `dedup_key` | Toda fuente produce un Evento canónico con los campos mínimos (brief §8.1); eventos duplicados se descartan por `dedup_key` | M-MVP-05 |
 | **M-MVP-07** · Store-and-forward | MVP | Buffer edge ante cortes | Tras un corte de red simulado, al restablecerse la conexión todos los eventos llegan una sola vez, en orden recuperable | M-MVP-05, M-MVP-06 |
 | **M-MVP-08** · Módulos de dominio (Prod/Scrap/QC/Downtime) | MVP | Registro de los 5 tipos de datos | Se registran producción, scrap, calidad, paradas y eventos de máquina, cada uno con sus campos canónicos (motivo, cantidad, costo, checklist según corresponda) | M-MVP-06 |
 | **M-MVP-09** · Carga manual en tablet (UX operario) | MVP | App/formularios de operario | Un operario registra los 5 tipos en tablet con mínimos toques; validación en origen; funciona con conectividad intermitente | M-MVP-08 |
-| **M-MVP-10** · Primer dato de PLC a Odoo | MVP | Flujo end-to-end (ver §2.2) | Dato de PLC → Evento → dashboard → Odoo, sin carga manual y sin pérdida/duplicación ante cortes | M-MVP-05..07, M-MVP-12, M-MVP-11 |
+| **M-MVP-10** · Producción manual → dashboard → Odoo (end-to-end) | MVP | Flujo end-to-end (ver §2.2) | Registro manual/datalogger → Evento → dashboard → Odoo, sin doble carga y sin pérdida/duplicación ante cortes | M-MVP-05..07, M-MVP-12, M-MVP-11 |
 | **M-MVP-11** · Dashboard en tiempo real | MVP | Read models + tablero CQRS | El dashboard muestra OEE (Disponibilidad × Rendimiento × Calidad) y scrap rate calculados con las fórmulas canónicas (brief §10.1), actualizados en tiempo real | M-MVP-08 |
-| **M-MVP-12** · Conector Odoo + ACL | MVP | Integración desacoplada con Odoo | Órdenes/productos/cantidades se sincronizan entre Nexo y Odoo vía ACL; el core no depende de Odoo | M-MVP-06 |
+| **M-MVP-12** · Conector Odoo + ACL | MVP | Integración desacoplada con Odoo | Se hace *pull* de MO/Producto/UoM/Motivos y *push* de producción real (avance/cierre de MO) y scrap (agregado por cierre de corrida) vía ACL; calidad opcional; el core no depende de Odoo | M-MVP-06 |
 | **M-MVP-13** · Job de sincronización con reintentos | MVP | Sync Job resiliente | Un fallo transitorio de Odoo se reintenta y se resuelve sin pérdida ni duplicación; estado del job observable | M-MVP-12 |
 | **M-MVP-14** · Event Store inmutable (base) | MVP | Historial de eventos append-only | Un evento ingerido no puede alterarse; se puede consultar el historial por contexto (site/line/asset) | M-MVP-06 |
 | **M-MVP-15** · Auditoría básica | MVP | Registro de acciones clave | Las acciones sensibles (alta de usuario, cambios de configuración) quedan auditadas por tenant | M-MVP-03 |
@@ -105,8 +105,11 @@ flowchart LR
 | **M-V1-08** · Reportes on-demand y programados | V1 | Reports exportables | Un reporte programado se genera y exporta automáticamente; sus cifras coinciden con el dashboard | M-MVP-11 |
 | **M-V1-09** · RBAC avanzado con scoping | V1 | Control de acceso por planta/línea | El acceso se restringe por planta/línea según la matriz de [users-permissions.md](../specs/users-permissions.md); un usuario no ve fuera de su alcance | M-MVP-03 |
 | **M-V1-10** · Observabilidad transversal | V1 | Logs/métricas/trazas en Control Plane | Un incidente de un tenant se diagnostica con una traza extremo a extremo desde el Control Plane | MVP |
+| **M-V1-11** · Agente Edge + Adapter Siemens S7 | V1 | Captura automática desde PLC S7 | Un PLC Siemens S7 real se lee vía el Agente Edge/Gateway (outbound-only, store-and-forward) y se normaliza al Evento canónico | MVP (Ingesta) |
+| **M-V1-12** · Primer dato de PLC a Odoo | V1 | Flujo end-to-end desde PLC | Una lectura/contador de un PLC S7 real → Evento canónico → dashboard en tiempo real → Odoo vía ACL; sin pérdida/duplicación ante cortes | M-V1-11, M-MVP-12 |
+| **M-V1-13** · Modo híbrido real (manual + automático) | V1 | Híbrido por planta | En una misma planta conviven captura manual y automática por protocolo sobre el mismo Evento canónico | M-V1-11 |
 
-**Criterio de salida V1:** hitos M-V1-01 a M-V1-10 cumplidos y criterios de salida del [roadmap](./roadmap.md) §3.5 verificados.
+**Criterio de salida V1:** hitos M-V1-01 a M-V1-13 cumplidos y criterios de salida del [roadmap](./roadmap.md) §3.5 verificados.
 
 ---
 
@@ -148,7 +151,7 @@ flowchart LR
 flowchart LR
     subgraph MVP
         A[M-MVP-02 Alta 7 pasos]
-        B[M-MVP-10 PLC a Odoo]
+        B[M-MVP-10 Manual → Dashboard → Odoo]
     end
     subgraph V1
         C[M-V1-01 Reglas]
@@ -174,7 +177,7 @@ Los hitos alimentan el seguimiento de las fases del [roadmap](./roadmap.md) y pr
 1. **Umbral de "precisión aceptada" en IA (M-ENT-01/02).** ¿Qué métrica y qué valor definen el éxito de un modelo con cada cliente? Debe pactarse por caso.
 2. **Definición de "sin downtime perceptible" (M-V2-06, M-ENT-07).** ¿Qué ventana de indisponibilidad se tolera en una migración/failover? Ligar a los SLAs de [product.md](../specs/product.md).
 3. **Alcance del seed inicial (M-MVP-02, paso 4).** ¿Qué catálogos por defecto se cargan (motivos de scrap/parada, roles, unidades) y cuáles quedan a configuración del cliente?
-4. **Objetos de Odoo en M-MVP-12.** ¿Qué objetos y direccionalidad exactos entran en el primer conector? Depende del cliente piloto (ver [idea.md](../idea.md)).
+4. ✅ **Resuelto (2026-07-11):** el conector Odoo del MVP (M-MVP-12) hace *pull* de MO/Producto/UoM/Motivos y *push* de producción real (avance/cierre de MO) y scrap (agregado por cierre de corrida); calidad opcional — ver [tablero de decisiones](../open-questions-board.md).
 5. **Medición objetiva de "reducción de carga manual" (M-MVP-16).** ¿Cómo se instrumenta la evidencia para el cliente de referencia? Coordinar con la NSM de [vision.md](./vision.md).
 6. **Criterio de captura de lote/serie en MVP vs. V1.** ¿Se registra lote/serie ya en el MVP para habilitar M-V1-07 sin backfill?
 7. **Prioridad de MQTT (M-V1-06).** ¿Es Must o Should en V1 según demanda real de los primeros clientes?

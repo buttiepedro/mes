@@ -120,6 +120,8 @@ Nexo prevé un catálogo extensible. La disponibilidad sigue el roadmap del brie
 
 Odoo es el conector de referencia del MVP. Su alcance funcional cubre el ciclo que conecta la **producción real de planta** (capturada por Nexo) con la **gestión** (registrada en Odoo), eliminando la carga manual.
 
+> **Alcance del MVP (INT-01):** el conector Odoo hace **pull** de MO, Producto, UoM y Motivos (contexto de captura) y **push** de la producción real (avance/cierre de MO) y del scrap (`stock.scrap`), con el **push de producción agregado por cierre de corrida** (no por evento). La sincronización de **calidad es bidireccional y opcional** en esta fase.
+
 ### 4.1 Entidades sincronizadas y dirección
 
 | Concepto canónico de Nexo | Concepto en Odoo (módulo) | Dirección | Descripción funcional |
@@ -136,9 +138,9 @@ Odoo es el conector de referencia del MVP. Su alcance funcional cubre el ciclo q
 ### 4.2 Flujos funcionales clave
 
 - **Descarga de órdenes (pull):** Nexo sincroniza las MO abiertas/confirmadas desde Odoo para que el operario vea **qué producir** y la captura quede contextualizada (orden ↔ máquina ↔ turno).
-- **Reporte de producción (push):** a medida que se registran Eventos `production` en planta, el conector consolida el avance y lo empuja a la MO correspondiente (avance parcial y cierre).
+- **Reporte de producción (push):** el conector **consolida el avance por cierre de corrida** (no por cada Evento `production`) y lo empuja a la MO correspondiente (avance/cierre), para acotar la carga sobre el ERP.
 - **Reporte de scrap (push):** cada **Registro de scrap** (cantidad, Motivo, costo) se envía como desecho asociado al producto/lote/MO.
-- **Calidad (bidireccional):** los planes/puntos de control pueden definirse en Odoo y traerse a Nexo; los resultados de inspección (aprobado/rechazado, mediciones, defectos) se empujan a Odoo.
+- **Calidad (bidireccional, opcional en el MVP):** los planes/puntos de control pueden definirse en Odoo y traerse a Nexo; los resultados de inspección (aprobado/rechazado, mediciones, defectos) se empujan a Odoo.
 - **Alineación de catálogos:** productos, unidades, motivos y lotes se mantienen consistentes para que el mapeo sea confiable.
 
 ### 4.3 Diagrama del flujo de sincronización con Odoo (Mermaid)
@@ -214,7 +216,7 @@ El mapeo es la configuración **por tenant** que hace que la traducción del ACL
 - **Correlación de identidad estable:** cada objeto sincronizado mantiene una **referencia cruzada** (id externo ↔ id canónico) para evitar duplicados y permitir *upserts* idempotentes.
 - **Mapeos versionados y auditados:** todo cambio de mapeo queda registrado (ver `audit`), porque altera cómo se interpreta y sincroniza el dato.
 - **Validación previa:** antes de activar un conector se valida que el mapeo esté completo y consistente (entidades obligatorias, unidades convertibles, catálogos alineados).
-- **Aislamiento por tenant (brief §6):** los mapeos y credenciales de un tenant jamás son visibles ni reutilizables por otro.
+- **Aislamiento por tenant (brief §6):** los mapeos y credenciales de un tenant jamás son visibles ni reutilizables por otro. Las **credenciales del conector** (API keys, OAuth, usuarios de servicio) se custodian en el **gestor de secretos central (Vault/KMS)** con el mismo estándar que el resto de la plataforma; la configuración del conector guarda **solo referencias** (nunca el secreto en claro), con **resolución bajo demanda** en el contexto del tenant y **rotación** periódica y ante incidente (ver [security.md](./security.md)).
 
 ---
 
@@ -328,6 +330,6 @@ flowchart LR
 3. **Reconciliación:** ¿con qué frecuencia y granularidad corre la reconciliación, y qué política de resolución automática vs. revisión humana se aplica ante divergencias?
 4. **Multi-ERP simultáneo:** el brief marca multi-ERP avanzado fuera del MVP; ¿qué restricciones se imponen en V1/V2 cuando un tenant activa dos ERPs que compiten por la misma entidad?
 5. **Certificación del Marketplace:** ¿qué proceso de certificación/seguridad deben pasar los conectores de terceros/Partners antes de ser "oficiales", y cómo se firman/verifican? (Coordinar con [control-plane.md](./control-plane.md) y [security.md](./security.md).)
-6. **Granularidad del push a Odoo:** ¿el avance de MO se reporta por cada Evento, agregado por intervalo o al cierre? Impacta carga sobre el ERP y latencia percibida.
-7. **Modelo de credenciales por conector:** ¿cómo se estandariza la custodia y rotación de credenciales (API keys, OAuth, usuarios de servicio) entre conectores heterogéneos manteniendo el aislamiento por tenant?
+6. ✅ **Resuelto (2026-07-11):** el push de producción a Odoo se hace **agregado por cierre de corrida** (avance/cierre de MO), no por cada evento, para acotar la carga sobre el ERP — ver [tablero de decisiones](../open-questions-board.md).
+7. ✅ **Resuelto (2026-07-11):** todas las credenciales de conector se custodian en el gestor de secretos central (Vault/KMS); la configuración guarda solo referencias, con resolución bajo demanda en contexto de tenant y rotación periódica y ante incidente — ver [tablero de decisiones](../open-questions-board.md).
 8. **SLA de sincronización:** ¿qué objetivos de latencia/consistencia se comprometen por plan (brief §11 Enterprise) y cómo se miden y reportan al cliente?

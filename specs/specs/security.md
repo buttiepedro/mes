@@ -36,8 +36,10 @@ Gestionadas por **Identity & Access** (servicio compartido; ver [architecture.md
 ### 2.1 Autenticación (AuthN)
 
 - **Tokens con claim de tenant:** toda sesión autenticada emite un token que incluye el claim `tenant_id`. Ese claim es la base de la resolución de tenant (ver [multi-tenancy.md](./multi-tenancy.md), sección 5) y se valida contra el host/subdominio.
-- **SSO:** soporte de inicio de sesión único (identidad corporativa del cliente) como capacidad, típicamente feature enterprise gestionada por licencia (ver [control-plane.md](./control-plane.md)).
-- **MFA:** autenticación multifactor, **obligatoria** para roles sensibles —usuarios globales del Control Plane (Super Administrador, Soporte) y administradores de tenant— y ofrecible al resto.
+- **SSO federado por tenant:** cada empresa enterprise puede federar su IdP corporativo (**OIDC / SAML**) para que sus usuarios entren con su identidad corporativa; capacidad típicamente enterprise gestionada por licencia (ver [control-plane.md](./control-plane.md) y [users-permissions.md](./users-permissions.md)).
+- **Cuentas locales:** para pymes sin IdP, Nexo ofrece autenticación local con política de contraseñas robusta.
+- **MFA:** autenticación multifactor **obligatoria** para todos los roles con **escritura sensible o administración** y para **todos los roles globales** del Control Plane; el **operario en kiosco** usa un factor adaptado a piso (**PIN / badge / NFC** + **dispositivo confiable**) en lugar de un segundo factor de teléfono.
+- **Step-up:** las acciones críticas (OTA en activo crítico, cambio de mapeo ERP, break-glass, cambios masivos de rol) exigen **reautenticación / segundo factor en el momento**, aunque la sesión esté activa.
 - **Sesiones:** expiración, renovación y revocación controladas; posibilidad de cierre de sesión forzado ante incidentes.
 
 ### 2.2 Autorización (AuthZ)
@@ -72,10 +74,10 @@ Gestionadas por **Identity & Access** (servicio compartido; ver [architecture.md
 
 ### 4.2 Gestión de secretos y credenciales de conexión
 
-- Las **credenciales de conexión de cada tenant** se almacenan en un **gestor de secretos** central y se referencian desde el **Tenant Connection Registry** (Control Plane) — nunca se persisten en el token, ni en el código, ni en los logs (ver [multi-tenancy.md](./multi-tenancy.md), sección 5, y [control-plane.md](./control-plane.md)).
+- Las **credenciales de conexión de cada tenant** se almacenan en un **gestor de secretos central (Vault/KMS)** y se referencian (nunca en claro) desde el **Tenant Connection Registry** (Control Plane) — nunca se persisten en el token, ni en el código, ni en los logs (ver [multi-tenancy.md](./multi-tenancy.md), sección 5, y [control-plane.md](./control-plane.md)).
 - Los secretos se resuelven **bajo demanda** y solo en el contexto de tenant correcto; su uso queda trazado.
 - **Rotación** periódica y ante incidentes; revocación inmediata si un secreto se compromete.
-- Las credenciales de **integración con ERPs** (Odoo y otros) se gestionan por tenant con el mismo estándar (ver [integrations.md](./integrations.md)).
+- Las credenciales de **integración con ERPs** (Odoo y otros) y de los **canales de notificación** se gestionan por tenant con el mismo estándar: el gestor central las custodia y la configuración guarda **solo referencias** (ver [integrations.md](./integrations.md)).
 
 ---
 
@@ -85,12 +87,12 @@ El mundo físico de la planta (PLCs, dataloggers, gateways, sensores) es un fren
 
 | Aspecto | Medida de seguridad |
 |---|---|
-| **Aprovisionamiento** | Alta segura de cada dispositivo/gateway con identidad única, asociada a un tenant y a su planta/línea. |
-| **Certificados / identidad** | Cada dispositivo/gateway se autentica con credenciales/certificados propios; comunicación mutuamente autenticada y cifrada. |
+| **Aprovisionamiento** | Alta segura de cada dispositivo/gateway con identidad única, asociada a un tenant y a su planta/línea; **provisioning zero-touch opcional**. |
+| **Identidad por dispositivo (mTLS)** | Cada dispositivo/gateway tiene identidad propia y se autentica con **mTLS + tokens rotables**; comunicación mutuamente autenticada y cifrada. |
 | **Conexión outbound** | El edge inicia la conexión hacia la nube (no se exponen puertos entrantes en planta); reduce superficie de ataque. |
 | **Firmware / OTA** | Actualizaciones firmadas y verificadas; control de versión de firmware; rollback ante fallo (ver [devices.md](./devices.md)). |
 | **Store-and-forward** | Buffer local cifrado ante cortes; reenvío con deduplicación (dedup_key del Evento canónico) sin pérdida ni duplicado. |
-| **Rotación / revocación** | Posibilidad de rotar credenciales y revocar un dispositivo comprometido sin afectar al resto del tenant. |
+| **Rotación / revocación** | Rotación de tokens/credenciales y **revocación por dispositivo** de un equipo comprometido sin afectar al resto del tenant. |
 | **Aislamiento por tenant** | Un dispositivo pertenece a un único tenant; sus datos se enrutan solo a la DB de ese tenant. |
 
 ---
@@ -155,9 +157,9 @@ Amenazas principales y sus mitigaciones. No es exhaustivo; se refinará con un e
 
 1. **Estándares de cumplimiento objetivo:** ¿a qué certificaciones/marcos apunta Nexo (por ejemplo, SOC 2, ISO 27001, GDPR, normativa local es-AR/industrial) y en qué fase del roadmap?
 2. **Break-glass de Soporte:** ¿qué flujo de aprobación, límite temporal y revisión gobierna el acceso excepcional a la DB de un tenant? (coordinar con [control-plane.md](./control-plane.md)).
-3. **MFA y SSO:** ¿MFA obligatorio solo para roles sensibles o para todos? ¿Qué proveedores de SSO/identidad se soportan y bajo qué plan?
+3. ✅ **Resuelto (2026-07-11):** SSO federado por tenant (OIDC/SAML) para enterprise + cuentas locales para pymes; MFA obligatoria para roles con escritura sensible/administración y todos los roles globales; operario en kiosco con PIN/badge/NFC + dispositivo confiable, y step-up para acciones críticas — ver [tablero de decisiones](../open-questions-board.md).
 4. **Gestión de claves:** ¿claves gestionadas por la plataforma o posibilidad de "bring your own key" (BYOK) para clientes enterprise?
 5. **Retención y borrado:** ¿qué períodos de retención por plan y qué garantías de borrado seguro (crypto-shredding) se ofrecen?
-6. **Seguridad del edge:** ¿qué mecanismo concreto de identidad de dispositivo (certificados) y qué política de rotación/OTA se define para el MVP vs. fases posteriores?
+6. ✅ **Resuelto (2026-07-11):** identidad por dispositivo con mTLS + tokens rotables, provisioning zero-touch opcional y revocación por dispositivo; el firmware/OTA firmado y verificado se detalla en [devices.md](./devices.md) — ver [tablero de decisiones](../open-questions-board.md).
 7. **Respuesta a incidentes:** ¿cuál es el plan de respuesta y notificación ante brechas (plazos, comunicación al tenant, obligaciones regulatorias)?
 8. **Pentesting y auditorías externas:** ¿con qué frecuencia se realizarán pruebas de penetración y auditorías de seguridad independientes?

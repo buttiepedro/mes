@@ -9,6 +9,9 @@
 > Ahí están consolidadas y deduplicadas las **105 preguntas** de todos los documentos, con ID estable,
 > recomendación por defecto, prioridad (P0/P1/P2), documentos afectados y columna de **Respuesta**.
 > Este documento queda como **vista temática** de referencia; para responder y hacer seguimiento, usá el tablero.
+>
+> **✅ Las 13 P0 se resolvieron el 2026-07-11** (respuestas completas en el [tablero](../open-questions-board.md)):
+> **PR-01** → Producción + dashboard · **PR-02** → híbrido configurable (MVP: manual + datalogger/CSV) · **AR-01** → broker tipo Kafka (abstraído) · **MT-01** → migraciones por cohortes con feature flags · **MT-02** → secretos en Vault/KMS (Registry solo referencias) · **IN-01** → Odoo *pull* MO/Producto/UoM/Motivos + *push* producción/scrap por cierre de corrida · **ED-01** → Agente Edge contenedor/software + appliance opcional · **ED-02** → protocolos industriales (S7/OPC UA/Modbus/MQTT) a V1; MVP con datalogger/CSV · **ED-05** → mTLS + tokens rotables · **SE-02** → SSO OIDC/SAML + MFA obligatoria (roles sensibles/globales) · **UX-01** → captura offline-first · **CO-01** → pricing base por planta + por dispositivo · **OP-02** → observabilidad agregada + salud por tenant/edge.
 
 ## Resumen ejecutivo
 

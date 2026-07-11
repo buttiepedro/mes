@@ -27,7 +27,7 @@ Este principio se expresa en cuatro dimensiones de aislamiento, todas obligatori
 | **Datos** | Cada tenant tiene su propia base de datos operativa. Ninguna consulta cruza el límite del tenant. | DB-per-tenant. La conexión se resuelve por tenant antes de tocar dato alguno. |
 | **Storage** | Fotos, adjuntos y evidencias (Archivo / Media) viven en un bucket o prefijo exclusivo del tenant. | Object storage segmentado por tenant; credenciales/scopes por tenant. Ver [security.md](./security.md). |
 | **Cómputo** | El procesamiento de eventos, reglas y read models de un tenant no interfiere ni comparte estado en memoria con otro. | Contexto de tenant explícito en cada unidad de trabajo; segmentación de colas/particiones por tenant. |
-| **Credenciales** | Las cadenas de conexión, claves de storage y secretos de integración de cada tenant son independientes. | Gestión de secretos centralizada; el **Tenant Connection Registry** entrega credenciales por tenant bajo demanda. |
+| **Credenciales** | Las cadenas de conexión, claves de storage y secretos de integración de cada tenant son independientes. | **Gestor de secretos central (Vault/KMS)**; el **Tenant Connection Registry** guarda **solo referencias** (no credenciales en claro) y las resuelve bajo demanda en el contexto del tenant; rotación periódica y ante incidente. |
 
 > El aislamiento total es el mismo principio fundamental que gobierna [security.md](./security.md). Multi-tenancy y seguridad son dos caras de la misma decisión.
 
@@ -92,7 +92,7 @@ La **Base Global (Control Plane DB)** es la base de datos exclusiva del proveedo
 | **Estado de tenants** | Estado del ciclo de vida (aprovisionando, activo, suspendido, dado de baja…) | Tenant Provisioning · Observability |
 | **Usuarios globales** | Super Administrador, Soporte, Implementador, Partner | Identity & Access |
 | **Partners** | Integradores/implementadores y su relación comercial con tenants | Administration & Licensing |
-| **Tenant Connection Registry** | Referencia a la ubicación y credenciales (secreto) de la DB de cada tenant | Tenant Provisioning |
+| **Tenant Connection Registry** | Ubicación de la DB de cada tenant + **referencia** al secreto de conexión en el gestor central (nunca credenciales en claro) | Tenant Provisioning |
 | **Feature Flags** | Banderas de funcionalidad por plan/tenant/entorno | Administration & Licensing |
 | **Marketplace** | Catálogo de conectores oficiales y de terceros | Marketplace |
 | **Versiones y despliegues** | Versionado de servicios, despliegues progresivos, rollbacks, compatibilidad | Observability · Administration & Licensing |
@@ -240,8 +240,8 @@ Con miles de bases de datos, estas operaciones deben ser **automatizadas, versio
 
 ### 8.1 Migraciones de esquema
 
-- Cada versión del esquema operativo del tenant está **versionada**; toda DB de tenant conoce en qué versión está.
-- Las migraciones se pueden aplicar **por tenant**, **por lote** o **por cohorte** (por ejemplo, primero un grupo piloto), habilitando **despliegues progresivos** alineados con las versiones de servicio (ver [control-plane.md](./control-plane.md)).
+- Cada versión del esquema operativo del tenant está **versionada e idempotente**; toda DB de tenant conoce en qué versión está y una migración puede re-aplicarse de forma segura.
+- Las migraciones se aplican **por cohortes con feature flags** (por ejemplo, primero un grupo piloto → grupos → total), habilitando **despliegues progresivos** con **objetivo de zero-downtime**, alineados con las versiones de servicio (ver [control-plane.md](./control-plane.md)).
 - Un alta de tenant siempre parte de las migraciones iniciales (paso 3 del flujo de alta).
 - El estado de migración de cada tenant es **observable** desde el Control Plane (quién está atrasado, quién falló, quién está al día).
 
@@ -325,7 +325,7 @@ flowchart TB
 1. **Nombre del producto:** "Nexo" es un working name provisional; falta confirmar naming definitivo y disponibilidad de dominios/subdominios (impacta el esquema de resolución por subdominio).
 2. **Estrategia de densidad inicial:** ¿cuántos tenants por instancia en el arranque y cuál es el umbral (por consumo/plan) que promueve a un tenant a instancia dedicada?
 3. **Residencia de datos:** ¿qué regiones se ofrecerán en el MVP/V1 y cómo se comercializa la residencia de datos por región (¿feature enterprise, opción de plan?)?
-4. **Ventanas y automatización de migraciones:** ¿migraciones con downtime por tenant o estrategia zero-downtime? ¿Cómo se comunican al cliente?
+4. ✅ **Resuelto (2026-07-11):** migraciones versionadas e idempotentes, aplicadas por cohortes con feature flags y objetivo zero-downtime, con estado de migración observable por tenant desde el Control Plane — ver [tablero de decisiones](../open-questions-board.md).
 5. **Política de backup por plan:** ¿qué frecuencia, retención y RPO/RTO se garantizan por plan/licencia, y cómo se reflejan en Administration & Licensing?
 6. **Reporting cross-tenant del proveedor:** ¿cómo se construyen las métricas agregadas de plataforma sin violar el aislamiento (agregación en Observability vs. pipeline analítico separado)?
 7. **Migración física en caliente:** ¿qué SLA y experiencia se ofrece al mover un tenant de región/clúster (¿modo lectura, ventana, transparente)?

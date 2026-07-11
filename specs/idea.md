@@ -117,7 +117,7 @@ Nexo captura desde un espectro amplio y heterogéneo de orígenes, todos normali
 | **Visión** | Cámaras IP, Cámaras USB |
 | **Sistemas y archivos** | Sistemas externos, APIs, Archivos CSV/Excel |
 
-> El MVP prioriza la captura desde **PLCs y dataloggers** más la **carga manual desde tablets**; el resto de protocolos y fuentes se completa en fases posteriores (ver §8 y [roadmap.md](./roadmap/roadmap.md)).
+> El MVP prioriza la **carga manual desde tablets** más el **datalogger vía carga de archivo/CSV/Excel**; la **captura automática por protocolos industriales** (Siemens S7, OPC UA, Modbus, MQTT) pasa a **V1** —el modelo de Devices/ingesta los contempla desde el día uno pero se activan en V1— y el resto de fuentes se completa en fases posteriores (ver §8 y [roadmap.md](./roadmap/roadmap.md)).
 
 ```mermaid
 flowchart LR
@@ -179,17 +179,20 @@ El MVP demuestra el valor central —eliminar la carga manual y dar tiempo real�
 
 **El MVP incluye (canónico):**
 - **Registrar:** Producción, Scrap, Controles de Calidad, Paradas y Eventos de máquina.
-- **Capturar desde:** PLCs y Dataloggers.
-- **Carga manual desde tablets** (UX de operario).
+- **Capturar desde:** carga manual (tablet) + datalogger vía carga de archivo/CSV/Excel.
+- **Carga manual desde tablets** (UX de operario). **Caso estrella: Producción + dashboard**, con demo end-to-end **producción manual → dashboard → Odoo**.
 - **Dashboard en tiempo real.**
 - **Integración con Odoo.**
 - **Multi-tenant con base de datos por tenant** y **Control Plane mínimo** (alta de tenant, licencias).
 
+**Modo híbrido configurable (manual + automático, por planta):** en el MVP el híbrido se limita a **manual + datalogger/CSV**; el híbrido con **protocolos industriales** se vuelve real en V1.
+
+**Fuera del MVP (a V1):** **captura automática por protocolos industriales** (Siemens S7, OPC UA, Modbus, MQTT) —el modelo de Devices/ingesta los contempla desde el día uno pero se activan en V1.
 **Fuera del MVP (ejemplos):** IA/visión artificial, mantenimiento predictivo, marketplace público, multi-ERP simultáneo avanzado y gemelo digital.
 
 ```mermaid
 flowchart LR
-  A[PLC + Datalogger] --> C[Ingestion / Edge Gateway]
+  A[Datalogger / CSV / Excel] --> C[Ingestion / Edge Gateway]
   B[Carga manual tablet] --> C
   C --> D[(Evento canónico)]
   D --> E[Dashboard tiempo real]
@@ -231,8 +234,8 @@ La convergencia de hardware barato, estándares maduros, cloud escalable y ERPs 
 
 1. **Nombre del producto:** "Nexo" es un *working name* provisional; falta validar disponibilidad de marca/dominio y decidir el nombre definitivo.
 2. **Segmento inicial de industrias:** ¿arrancamos foco en 1–2 industrias (p. ej. metalúrgica y alimenticia) para el go-to-market del MVP, o mantenemos amplitud desde el día uno?
-3. **Profundidad de la integración Odoo en el MVP:** ¿qué objetos de Odoo se sincronizan en la primera versión (órdenes de producción, productos, cantidades) y en qué dirección?
-4. **Alcance del edge en el MVP:** ¿el Agente Edge/Gateway se distribuye como appliance, contenedor o software instalable, y qué protocolos mínimos soporta al lanzar?
-5. **Modelo comercial de captura manual vs. automática:** ¿el pricing distingue entre tenants que solo cargan manual y los que integran hardware? (coherencia con licenciamiento en [product.md](./specs/product.md)).
+3. ✅ **Resuelto (2026-07-11):** la integración Odoo del MVP hace *pull* de MO/Producto/UoM/Motivos y *push* de producción real (avance/cierre de MO) y scrap (agregado por cierre de corrida); calidad opcional — ver [tablero de decisiones](./open-questions-board.md).
+4. ✅ **Resuelto (2026-07-11):** el Agente Edge/Gateway se distribuye como **contenedor/software** (con **appliance opcional**), siempre **outbound-only**; en el MVP no captura por protocolos industriales (solo manual + datalogger/CSV), que pasan a V1 — ver [tablero de decisiones](./open-questions-board.md).
+5. ✅ **Resuelto (2026-07-11):** el pricing es **suscripción base por planta** (captura manual, usuarios, Odoo y dashboard) **+ precio por dispositivo conectado** al entrar la captura automática, con módulos empaquetados por capa vía feature flags; el escenario 100% manual paga la base por planta — ver [tablero de decisiones](./open-questions-board.md).
 6. **Geografía inicial:** ¿el primer mercado es Argentina/LatAm de habla hispana, y qué implica para idioma, soporte y residencia de datos?
 7. **Definición de "eliminar la carga manual" como métrica:** ¿cómo medimos objetivamente la reducción de carga manual para probar la propuesta de valor (ver métricas en [product.md](./specs/product.md))?

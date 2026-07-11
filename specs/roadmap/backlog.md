@@ -8,7 +8,7 @@
 
 Este documento contiene el **backlog inicial de producto** de Nexo, organizado por **épicas** (una por microservicio / bounded context canónico, brief §5.1) y desglosado en **user stories** con el formato *"Como &lt;rol&gt; quiero &lt;objetivo&gt; para &lt;beneficio&gt;"*. Cada historia lleva su **prioridad MoSCoW** y su **tag de fase** (MVP / V1 / V2 / Enterprise), de modo que el backlog sea directamente derivable del [roadmap](./roadmap.md) y verificable contra los [hitos](./milestones.md).
 
-Las historias del **MVP** están marcadas de forma explícita (columna **MVP** con el ícono ✅) para separar sin ambigüedad el alcance mínimo viable —captura de Producción/Scrap/Calidad/Paradas/Eventos, PLC+datalogger, carga manual en tablet, dashboard en tiempo real, integración Odoo y multi-tenant DB-per-tenant— del resto de la evolución. El backlog cubre **todos los módulos** del brief, incluidos los servicios compartidos del Control Plane y los de fase futura (IA/visión), para dar una vista completa del producto aunque muchas historias sean posteriores al MVP.
+Las historias del **MVP** están marcadas de forma explícita (columna **MVP** con el ícono ✅) para separar sin ambigüedad el alcance mínimo viable —captura de Producción/Scrap/Calidad/Paradas/Eventos, **carga manual en tablet + datalogger vía carga de archivo/CSV/Excel**, dashboard en tiempo real, integración Odoo y multi-tenant DB-per-tenant (la **captura automática por protocolos industriales** —S7/OPC UA/Modbus/MQTT— pasa a V1)— del resto de la evolución. El backlog cubre **todos los módulos** del brief, incluidos los servicios compartidos del Control Plane y los de fase futura (IA/visión), para dar una vista completa del producto aunque muchas historias sean posteriores al MVP.
 
 Los **roles** usados en las historias son los canónicos (brief §9): personas del tenant (Operario, Supervisor, Calidad, Producción, Mantenimiento, Gerencia, Administrador del tenant, Integraciones) y roles globales del Control Plane (Super Administrador, Soporte, Implementador, Partner). Este backlog es un punto de partida vivo: se refina y se estima con el equipo, y se sincroniza con [milestones.md](./milestones.md) a medida que avanza cada fase.
 
@@ -88,16 +88,17 @@ Los **roles** usados en las historias son los canónicos (brief §9): personas d
 
 ## E3 · Administration & Licensing
 
-**Objetivo de la épica:** planes, licencias, límites, feature flags y facturación en el Control Plane.
+**Objetivo de la épica:** suscripción base por planta, precio por dispositivo conectado, capas por feature flags, límites y facturación en el Control Plane.
 
 | ID | User story | Rol | MoSCoW | Fase | MVP |
 |---|---|---|---|---|---|
-| US-LIC-01 | Como **Super Administrador** quiero asignar un plan con límites a cada tenant para controlar su alcance de uso. | Super Administrador | Must | MVP | ✅ |
-| US-LIC-02 | Como **plataforma** quiero aplicar los límites del plan (dispositivos, usuarios, eventos) para respetar la licencia. | Super Administrador | Must | MVP | ✅ |
+| US-LIC-01 | Como **Super Administrador** quiero asignar a cada tenant una suscripción base por planta con sus límites para controlar su alcance y facturación. | Super Administrador | Must | MVP | ✅ |
+| US-LIC-02 | Como **plataforma** quiero aplicar la base por planta y los límites (usuarios, dispositivos, eventos) para respetar la licencia. | Super Administrador | Must | MVP | ✅ |
 | US-LIC-03 | Como **Gerencia** quiero ver el consumo de mi plan para anticipar necesidades de upgrade. | Gerencia | Should | V1 | |
 | US-LIC-04 | Como **Super Administrador** quiero habilitar/inhabilitar capacidades por feature flag y por tenant para desplegar gradualmente. | Super Administrador | Must | V2 | |
 | US-LIC-05 | Como **Super Administrador** quiero facturar por uso/plan para monetizar de forma flexible. | Super Administrador | Should | V2 | |
 | US-LIC-06 | Como **Gerencia** quiero contratar un SLA enterprise para asegurar disponibilidad y soporte. | Gerencia | Must | Enterprise | |
+| US-LIC-07 | Como **Super Administrador** quiero cobrar por **dispositivo conectado** y empaquetar módulos por **capa** vía feature flags (Captura base → MES ligero → IA) para escalar el pricing con la captura automática. | Super Administrador | Should | V1 | |
 
 ---
 
@@ -138,7 +139,7 @@ Los **roles** usados en las historias son los canónicos (brief §9): personas d
 | ID | User story | Rol | MoSCoW | Fase | MVP |
 |---|---|---|---|---|---|
 | US-ING-01 | Como **Integraciones** quiero instalar un Agente Edge/Gateway en planta que conecte outbound a la nube para capturar sin abrir puertos de entrada. | Integraciones | Must | MVP | ✅ |
-| US-ING-02 | Como **Integraciones** quiero capturar datos de un PLC Siemens S7 para automatizar el registro de máquina. | Integraciones | Must | MVP | ✅ |
+| US-ING-02 | Como **Integraciones** quiero capturar datos de un PLC Siemens S7 para automatizar el registro de máquina. | Integraciones | Must | V1 | |
 | US-ING-03 | Como **Integraciones** quiero capturar datos de un datalogger para incorporar equipos de adquisición. | Integraciones | Must | MVP | ✅ |
 | US-ING-04 | Como **plataforma** quiero normalizar toda fuente al Evento canónico (con `origin_metadata` y `dedup_key`) para unificar el dato. | Integraciones | Must | MVP | ✅ |
 | US-ING-05 | Como **plataforma** quiero descartar eventos duplicados por `dedup_key` para garantizar idempotencia. | Integraciones | Must | MVP | ✅ |
@@ -146,8 +147,9 @@ Los **roles** usados en las historias son los canónicos (brief §9): personas d
 | US-ING-07 | Como **Integraciones** quiero capturar vía OPC UA para integrar sistemas industriales estándar. | Integraciones | Must | V1 | |
 | US-ING-08 | Como **Integraciones** quiero capturar vía Modbus para integrar dispositivos que usan ese protocolo. | Integraciones | Must | V1 | |
 | US-ING-09 | Como **Integraciones** quiero capturar vía MQTT para incorporar dispositivos IoT que publican por ese canal. | Integraciones | Should | V1 | |
-| US-ING-10 | Como **Integraciones** quiero ingerir archivos CSV/Excel y datos de APIs externas para cubrir fuentes no industriales. | Integraciones | Should | V1 | |
+| US-ING-10 | Como **Integraciones** quiero ingerir archivos de datalogger (carga de archivo/CSV/Excel) para capturar sin protocolo industrial en el MVP. | Integraciones | Must | MVP | ✅ |
 | US-ING-11 | Como **plataforma** quiero aplicar backpressure ante picos de eventos para sostener la ingesta a escala. | Integraciones | Should | V2 | |
+| US-ING-12 | Como **Integraciones** quiero ingerir datos de APIs/sistemas externos para cubrir fuentes no industriales. | Integraciones | Should | V1 | |
 
 ---
 
@@ -174,7 +176,7 @@ Los **roles** usados en las historias son los canónicos (brief §9): personas d
 | ID | User story | Rol | MoSCoW | Fase | MVP |
 |---|---|---|---|---|---|
 | US-PROD-01 | Como **Operario** quiero registrar la cantidad producida en una orden/máquina/turno para reflejar mi producción real. | Operario | Must | MVP | ✅ |
-| US-PROD-02 | Como **plataforma** quiero generar registros de producción automáticamente desde el contador de un PLC para eliminar la carga manual. | Operario | Must | MVP | ✅ |
+| US-PROD-02 | Como **plataforma** quiero generar registros de producción automáticamente desde el contador de un PLC para eliminar la carga manual. | Operario | Must | V1 | |
 | US-PROD-03 | Como **Producción** quiero asociar la producción a una orden (Work Order/MO) sincronizada con el ERP para conectar planta y gestión. | Producción | Must | MVP | ✅ |
 | US-PROD-04 | Como **Supervisor** quiero registrar/gestionar turnos para contextualizar la producción por franja horaria. | Supervisor | Must | MVP | ✅ |
 | US-PROD-05 | Como **Producción** quiero ver la productividad por línea/turno para evaluar el desempeño. | Producción | Should | MVP | ✅ |
@@ -222,7 +224,7 @@ Los **roles** usados en las historias son los canónicos (brief §9): personas d
 | ID | User story | Rol | MoSCoW | Fase | MVP |
 |---|---|---|---|---|---|
 | US-DWN-01 | Como **Operario** quiero registrar una parada de máquina con su motivo para explicar la detención. | Operario | Must | MVP | ✅ |
-| US-DWN-02 | Como **plataforma** quiero detectar automáticamente paradas desde el estado de un PLC para no depender del registro manual. | Operario | Must | MVP | ✅ |
+| US-DWN-02 | Como **plataforma** quiero detectar automáticamente paradas desde el estado de un PLC para no depender del registro manual. | Operario | Must | V1 | |
 | US-DWN-03 | Como **Producción** quiero distinguir paradas programadas y no programadas para analizar disponibilidad. | Producción | Must | MVP | ✅ |
 | US-DWN-04 | Como **Producción** quiero elegir el motivo (Reason Code) de parada de un catálogo para estandarizar. | Producción | Must | MVP | ✅ |
 | US-DWN-05 | Como **Mantenimiento** quiero calcular MTBF y MTTR con las fórmulas canónicas para medir la confiabilidad. | Mantenimiento | Should | V1 | |
@@ -251,7 +253,7 @@ Los **roles** usados en las historias son los canónicos (brief §9): personas d
 | ID | User story | Rol | MoSCoW | Fase | MVP |
 |---|---|---|---|---|---|
 | US-INT-01 | Como **Integraciones** quiero conectar Nexo con Odoo vía un conector desacoplado (ACL) para sincronizar sin acoplar el core. | Integraciones | Must | MVP | ✅ |
-| US-INT-02 | Como **Integraciones** quiero mapear órdenes/productos/cantidades entre Nexo y Odoo para alinear los modelos. | Integraciones | Must | MVP | ✅ |
+| US-INT-02 | Como **Integraciones** quiero mapear el *pull* de MO/Producto/UoM/Motivos y el *push* de producción real y scrap entre Nexo y Odoo para alinear los modelos. | Integraciones | Must | MVP | ✅ |
 | US-INT-03 | Como **plataforma** quiero ejecutar jobs de sincronización con reintentos para tolerar fallos transitorios del ERP. | Integraciones | Should | MVP | ✅ |
 | US-INT-04 | Como **Integraciones** quiero ver el estado de cada job de sincronización para diagnosticar problemas. | Integraciones | Should | MVP | ✅ |
 | US-INT-05 | Como **Integraciones** quiero conectar con SAP/Dynamics/Oracle reutilizando el patrón ACL para soportar multi-ERP. | Integraciones | Must | V2 | |
@@ -375,7 +377,7 @@ El MVP queda cubierto por las historias ✅ de las épicas **E1 Identity & Acces
 2. **Granularidad de "plataforma" como rol.** Varias historias tienen a "plataforma" como sujeto (comportamiento del sistema); ¿se modelan como historias técnicas/enablers o se reescriben desde un rol humano responsable?
 3. **Historias de UX de operario.** ¿Cuánto detalle de la experiencia de tablet (offline, mínimos toques, guantes) se desglosa en historias propias vs. criterios de aceptación? Coordinar con [ui-ux.md](../specs/ui-ux.md).
 4. **Captura de lote/serie en MVP (US-TRC-04).** Marcada ✅ como Should: ¿entra realmente al MVP para habilitar la genealogía de V1 sin backfill, o se pospone?
-5. **Alcance del conector Odoo (US-INT-01/02).** ¿Qué objetos y direccionalidad exactos se comprometen en el MVP? Depende del cliente piloto (ver [idea.md](../idea.md)).
+5. ✅ **Resuelto (2026-07-11):** el conector Odoo del MVP (US-INT-01/02) hace *pull* de MO/Producto/UoM/Motivos y *push* de producción real (avance/cierre de MO) y scrap (agregado por cierre de corrida); calidad opcional — ver [tablero de decisiones](../open-questions-board.md).
 6. **Roles globales en historias.** ¿Falta detallar historias del Implementador (onboarding de clientes) más allá del alta técnica de tenant?
 7. **Criterios de aceptación por historia.** Este backlog fija prioridad y fase; los criterios de aceptación detallados por historia se elaborarán junto con [milestones.md](./milestones.md) y los documentos de dominio.
 8. **Definición de "Done".** ¿Qué exige la definición de terminado transversal (observabilidad, aislamiento, pruebas) para considerar una historia cerrada en cada fase?

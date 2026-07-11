@@ -24,7 +24,7 @@ Finalmente, Producción es un **contribuyente directo del OEE**. Aporta el **Tot
 - Modelar y ejecutar **Órdenes de producción** sincronizadas con la MO de Odoo.
 - Registrar **cantidades producidas** (buenas y no conformes) por orden, máquina, turno y operario.
 - Capturar **tiempos** de ejecución (arranque, pausa, fin, tiempo operativo).
-- Soportar **captura manual** (tablet) y **captura automática** (contador PLC / datalogger).
+- Soportar **captura manual** (tablet) y **captura automática vía datalogger/CSV** en el MVP; los **protocolos industriales** (S7/OPC UA/Modbus/MQTT) para captura directa de PLC llegan en **V1** (ver [devices.md](./devices.md)).
 - Gestionar el **ciclo de estados** de la orden y de las corridas de producción.
 - Calcular y exponer KPIs de **producción, productividad, rendimiento** y la contribución de Producción al **OEE**.
 - Emitir **Eventos canónicos** de tipo `production` hacia el Event Store y los read models de dashboards.
@@ -93,6 +93,8 @@ Nexo **complementa** el ERP; no lo reemplaza. La planificación (qué producir, 
 
 **Principio arquitectónico:** toda la conversación con Odoo pasa por el servicio **Connectors / Integrations** y su **ACL**. El dominio Production **no** conoce el modelo de Odoo; solo publica/consume su propio lenguaje ubicuo. Detalle de mapeos, reintentos y **Job de sincronización (Sync Job)** en [integrations.md](./integrations.md).
 
+> **Granularidad del push (INT-01):** el reporte de producción real a Odoo se **agrega por cierre de corrida** (avance/cierre de MO), no por cada evento, para acotar la carga sobre el ERP; el scrap se refleja como `stock.scrap`. El pull de contexto (MO, Producto, UoM, Motivos) y la calidad bidireccional opcional se detallan en [integrations.md](./integrations.md).
+
 ```mermaid
 sequenceDiagram
     participant Odoo as Odoo (ERP)
@@ -127,7 +129,7 @@ El operario, autenticado y con la orden seleccionada, ingresa cantidades. Pensad
 ### 4.2 Captura automática (contador PLC / datalogger)
 Una **Señal/Tag** de tipo contador (p. ej. `contador_piezas_OK`) del PLC se lee vía el **Agente Edge / Gateway** y se transforma en registros de producción.
 
-- **Fuente:** PLC Siemens S7, OPC UA, Modbus, MQTT, datalogger, ESP32 (ver sección 3 del brief y [devices.md](./devices.md)).
+- **Fuente:** en el MVP la captura automática es por **datalogger/CSV**; los protocolos industriales (PLC Siemens S7, OPC UA, Modbus, MQTT) para lectura directa de contadores llegan en **V1** (ver sección 3 del brief y [devices.md](./devices.md)).
 - **Patrón:** el contador es **acumulativo/monótono**; Nexo calcula el **delta** entre lecturas para obtener piezas del intervalo. Debe manejar **reset de contador** (rollover) y reinicios de PLC.
 - **Buenas vs no conformes automáticas:** idealmente dos tags (`contador_OK`, `contador_NOK`) o un tag total + señal de rechazo. Si solo hay un contador total, las no conformes se completan por Calidad/Scrap o manualmente.
 - **Contexto:** la asociación tag→máquina→orden→turno la resuelve Production usando la **orden activa** de esa máquina en ese momento y el **calendario de turnos**.

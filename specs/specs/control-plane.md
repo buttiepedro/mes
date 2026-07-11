@@ -98,7 +98,7 @@ El Control Plane es operado por **roles globales** (canónicos). No deben confun
 | **Implementador** | Onboarding y configuración inicial de empresas; ejecución de altas y setup. | Alta de tenants, seed, ayuda de puesta en marcha. |
 | **Partner** | Integrador externo que implementa/gestiona tenants asignados. | Acceso limitado a las empresas que le corresponden. |
 
-> El modelo de permisos global es **RBAC** con mínimo privilegio; las acciones sobre tenants se rigen por el rol y quedan auditadas. La matriz operativa por tenant está en [users-permissions.md](./users-permissions.md).
+> El modelo de permisos global es **RBAC** con mínimo privilegio; **la MFA es obligatoria para todos los roles globales** y las acciones críticas exigen **step-up** (reautenticación en el momento). Las acciones sobre tenants se rigen por el rol y quedan auditadas. La matriz operativa por tenant está en [users-permissions.md](./users-permissions.md).
 
 ---
 
@@ -118,6 +118,8 @@ La gestión de licencias es la palanca comercial y de control de uso del proveed
 | **Límites de uso** | Topes de eventos/día, storage, jobs de sincronización, retención, etc. |
 | **Módulos habilitados** | Qué dominios funcionales se activan (Producción, Calidad, Scrap, Paradas, Trazabilidad, Reglas, Reportes…). |
 | **Features enterprise** | Capacidades premium (residencia de datos por región, SSO, IA/visión, SLAs, alta disponibilidad…). |
+
+> **Modelo de licenciamiento (COM-01):** la licencia combina una **suscripción base por planta** + un **precio por dispositivo**, más **módulos habilitados por capa mediante feature flags** siguiendo la escalera **Captura base → MES V1 → IA Enterprise**, y **add-ons por consumo**. Los **límites de uso** (usuarios, dispositivos, plantas) de la sección 5.2 siguen aplicando sobre esta estructura.
 
 ### 5.2 Aplicación de límites (enforcement)
 
@@ -145,6 +147,8 @@ El servicio **Observability** ofrece la visión de salud de **todo** el ecosiste
 
 > Regla de aislamiento: los logs y métricas se **segmentan por tenant**; la observabilidad global agrega sin exponer dato operativo entre clientes (ver [multi-tenancy.md](./multi-tenancy.md) y [security.md](./security.md)).
 
+> **Estrategia de observabilidad a escala (OPS-01):** métricas **agregadas** de plataforma combinadas con **salud por tenant y por edge**, **alertas proactivas** ante degradación y **trazas correlacionadas por `tenant_id`**, siempre **segmentadas** para no exponer dato operativo entre clientes.
+
 ---
 
 ## 7. Administración de versiones
@@ -154,7 +158,7 @@ El Control Plane gobierna la evolución técnica de la plataforma, alineado con 
 | Capacidad | Descripción funcional |
 |---|---|
 | **Versionado** | Cada servicio y el esquema de tenant tienen versión conocida; se sabe en qué versión está cada tenant. |
-| **Despliegues progresivos** | Liberación por **cohortes** (piloto → grupos → total), reduciendo riesgo. Se coordina con las migraciones por tenant de [multi-tenancy.md](./multi-tenancy.md). |
+| **Despliegues progresivos** | Liberación por **cohortes con feature flags** (piloto → grupos → total), reduciendo riesgo. Se coordina con las **migraciones versionadas e idempotentes por cohorte** de [multi-tenancy.md](./multi-tenancy.md), con **objetivo de zero-downtime** y **estado de migración observable por tenant**. |
 | **Feature flags** | Activación gradual de funcionalidad sin redeploy; por plan, tenant, cohorte o entorno. |
 | **Rollbacks** | Reversión controlada de un despliegue o feature ante incidentes. |
 | **Compatibilidad** | Gestión de compatibilidad entre versiones de servicios, esquema de tenant y conectores del marketplace. |
@@ -258,7 +262,7 @@ El **Marketplace** es el catálogo global de conectores oficiales y de terceros 
 
 ## Preguntas abiertas
 
-1. **Estructura de planes:** ¿cuáles son los planes comerciales concretos del MVP/V1 (Starter/Pro/Enterprise u otro) y qué módulos/límites incluye cada uno?
+1. ✅ **Resuelto (2026-07-11):** el licenciamiento se modela como suscripción base por planta + precio por dispositivo, con módulos por capa vía feature flags (Captura base → MES V1 → IA Enterprise) y add-ons por consumo, manteniendo los límites de uso (usuarios/dispositivos/plantas) — ver [tablero de decisiones](../open-questions-board.md).
 2. **Política de vencimiento:** ¿qué período de gracia hay entre vencimiento y suspensión, y entre baja lógica y baja definitiva (retención)?
 3. **Break-glass de Soporte:** ¿qué controles, aprobaciones y auditoría gobiernan el acceso temporal de Soporte a la DB de un tenant? (coordinar con [security.md](./security.md)).
 4. **Alcance de Partners:** ¿qué puede y qué no puede hacer un Partner sobre los tenants que gestiona? ¿Modelo de comisiones/facturación asociado?

@@ -36,7 +36,7 @@ Reglas transversales que **todos** los servicios respetan. Un endpoint que se de
 |---|---|
 | **REST** | Versión en la URL: `/v1/...`. El breaking change sube a `/v2`; los cambios compatibles (agregar campos opcionales, nuevos endpoints) no cambian la versión. Todos los servicios exponen bajo el prefijo del servicio en el Gateway (p. ej. `/production/v1/...`). |
 | **gRPC** | Versión en el **paquete** `.proto`: `nexo.production.v1`. Un cambio incompatible crea `v2`; se mantienen ambos durante la ventana de migración. |
-| **Eventos** | Versión en el **envelope** (`schema_version`) y sufijo en el `type` (`production.registered.v1`). Compatibilidad hacia atrás gobernada por el schema registry (ver [02-event-model.md](./02-event-model.md)). |
+| **Eventos** | Versión en el **envelope** (`schema_version`) y sufijo en el **topic** (`nexo.production.registered.v1`); el `type` (`nexo.production.registered`) no lleva versión. Compatibilidad hacia atrás gobernada por el schema registry (ver [02-event-model.md](./02-event-model.md)). |
 
 ### 1.2 Paginación, filtros y ordenamiento
 
@@ -140,13 +140,15 @@ es un **código de error de dominio estable** (no cambia entre versiones); `erro
 
 ### 1.8 Convención de eventos (resumen; detalle en 02)
 
+> **El catálogo canónico de eventos vive en [02-event-model.md](./02-event-model.md); acá se referencian esos mismos nombres.**
+
 Envelope canónico (campos clave, ver [02-event-model.md](./02-event-model.md)):
 
 ```jsonc
 {
   "event_id": "uuid",            // idempotencia
   "tenant_id": "acme",           // determina DB y partición
-  "type": "production.registered.v1",
+  "type": "nexo.production.registered",
   "occurred_at": "2026-07-11T13:20:05Z",
   "source": "manual|device|api|file",
   "payload": { /* según type */ },
@@ -160,7 +162,7 @@ Envelope canónico (campos clave, ver [02-event-model.md](./02-event-model.md)):
   `evt.scrap`, `evt.downtime`, `evt.machine`, `evt.reading`). **Dead-letter** por canal.
 - **Dos capas de eventos:** (a) **canónicos normalizados** que publica Ingestion (routing por `type`: `production`,
   `scrap`, `quality`, `downtime`, `reading`, `machine_event`, `custom`); (b) **eventos de dominio/negocio** que publican
-  los dominios (`production.registered`, `quality.disposition`, …). Traceability consume prácticamente todo.
+  los dominios (`nexo.production.registered`, `nexo.quality.disposition_set`, …). Traceability consume prácticamente todo.
 
 ---
 
@@ -277,9 +279,9 @@ message ProvisioningStatus { string tenant_id = 1; int32 step = 2; string state 
 
 | Dirección | Evento | Consumidores / Notas |
 |---|---|---|
-| **Publica** | `tenant.provisioning.started.v1` | Observability, Audit global |
-| **Publica** | `tenant.provisioned.v1` (activo) | Notifications (bienvenida), Identity, Connectors (seed de config), Observability |
-| **Publica** | `tenant.state_changed.v1` (suspendido/baja) | Notifications, todos los servicios (cache-invalidate del Registry) |
+| **Publica** | `nexo.tenant.provisioning_started.v1` | Observability, Audit global |
+| **Publica** | `nexo.tenant.provisioned.v1` (activo) | Notifications (bienvenida), Identity, Connectors (seed de config), Observability |
+| **Publica** | `nexo.tenant.state_changed.v1` (suspendido/baja) | Notifications, todos los servicios (cache-invalidate del Registry) |
 | **Consume** | — | (orquesta vía gRPC a Identity/Neon; el seed lo dispara internamente) |
 
 ---
@@ -354,9 +356,9 @@ message CreateTenantAdminReply   { string user_id = 1; string invite_token = 2; 
 
 | Dirección | Evento | Consumidores / Notas |
 |---|---|---|
-| **Publica** | `identity.user.created.v1`, `identity.role_binding.changed.v1` | Audit, Notifications |
-| **Publica** | `identity.login.suspicious.v1` | Rules Engine, Notifications (severidad seguridad) |
-| **Consume** | `tenant.provisioned.v1` | Habilita realm/login del tenant |
+| **Publica** | `nexo.identity.user_created.v1`, `nexo.identity.role_binding_changed.v1` | Audit, Notifications |
+| **Publica** | `nexo.identity.login_suspicious.v1` | Rules Engine, Notifications (severidad seguridad) |
+| **Consume** | `nexo.tenant.provisioned.v1` | Habilita realm/login del tenant |
 
 ---
 
@@ -454,12 +456,12 @@ llamando a `Nexo.Devices` (patrón del baseline §4). No expone servidor gRPC pr
 
 | Dirección | Evento (`type`) | Consumidores / Notas |
 |---|---|---|
-| **Publica** | Canónico `production` | Production (+ Traceability, Dashboards, Rules) |
-| **Publica** | Canónico `scrap` | Scrap (+ Traceability, Dashboards, Rules) |
-| **Publica** | Canónico `quality` / `quality.measured` | Quality (+ Traceability, Dashboards) |
-| **Publica** | Canónico `downtime` / `machine_event` | Downtime/Devices (+ Production para pausar corrida, Rules) |
-| **Publica** | Canónico `reading` | Time-series / Devices (+ Rules; agregaciones a Dashboards) |
-| **Publica** | `ingestion.quarantined.v1` | Observability/Notifications (evento inválido/no contextualizado) |
+| **Publica** | Canónico categoría `production` | Production (+ Traceability, Dashboards, Rules) |
+| **Publica** | Canónico categoría `scrap` | Scrap (+ Traceability, Dashboards, Rules) |
+| **Publica** | Canónico categoría `quality` / `nexo.quality.measured.v1` | Quality (+ Traceability, Dashboards) |
+| **Publica** | Canónico categoría `downtime` / `machine_event` | Downtime/Devices (+ Production para pausar corrida, Rules) |
+| **Publica** | `nexo.reading.ingested.v1` | Time-series / Devices (+ Rules; agregaciones a Dashboards) |
+| **Publica** | `nexo.ingestion.quarantined.v1` | Observability/Notifications (evento inválido/no contextualizado) |
 | **Consume** | — | (recibe de edge/CSV por REST; resuelve contexto por gRPC a Devices) |
 
 ---
@@ -539,10 +541,10 @@ message AssetContext { string site = 1; string line = 2; string asset = 3; strin
 
 | Dirección | Evento | Consumidores / Notas |
 |---|---|---|
-| **Publica** | `device.state_changed.v1` (online/offline/degradado) | Dashboards, Rules Engine, Observability |
-| **Publica** | `device.mapping.changed.v1` | Ingestion (refresca caché de mapeos), Audit |
-| **Publica** | `device.ota.campaign.status.v1` | Dashboards, Audit |
-| **Consume** | `machine_event`, `reading` (canónicos) | Actualiza salud/última-comunicación del dispositivo |
+| **Publica** | `nexo.device.status_changed.v1` (online/offline/degradado) | Dashboards, Rules Engine, Observability |
+| **Publica** | `nexo.device.mapping_changed.v1` | Ingestion (refresca caché de mapeos), Audit |
+| **Publica** | `nexo.device.ota_campaign_status.v1` | Dashboards, Audit |
+| **Consume** | `machine_event` (canónico), `nexo.reading.ingested.v1` | Actualiza salud/última-comunicación del dispositivo |
 
 ---
 
@@ -550,7 +552,7 @@ message AssetContext { string site = 1; string line = 2; string asset = 3; strin
 
 **Responsabilidad:** órdenes de producción (espejo de la MO de Odoo), **corridas (Production Run)**, **registros de
 producción** (manual y automático), turnos, ciclo de estados y KPIs (Rendimiento, factor Calidad, cumplimiento de plan).
-Emite eventos `production.*`; consume calidad/scrap/máquina para conciliar (ver
+Emite eventos `nexo.production.*`; consume calidad/scrap/máquina para conciliar (ver
 [../specs/specs/production.md](../specs/specs/production.md)).
 
 #### REST (OpenAPI resumido)
@@ -616,7 +618,7 @@ paths:
                 occurred_at:         { type: string, format: date-time }
                 photo_file_id:       { type: string, nullable: true }
       responses:
-        "201": { description: "Registro creado; emite production.registered" }
+        "201": { description: "Registro creado; emite nexo.production.registered" }
         "403": { description: "Fuera de scoping/ABAC", $ref: '#/components/responses/Problem' }
         "409": { description: "Idempotency-Key reusada con distinto payload" }
         "422": { description: "Orden no En ejecución / discrepancia (V4/V7)", $ref: '#/components/responses/Problem' }
@@ -665,14 +667,14 @@ message RunClosure {
 
 | Dirección | Evento | Consumidores / Notas |
 |---|---|---|
-| **Publica** | `production.registered.v1` | Traceability, Dashboards, Rules, (Scrap/Downtime/Quality como denominador/contexto) |
-| **Publica** | `production.order.state_changed.v1` | Dashboards, **Connectors (Odoo)**, Notifications |
-| **Publica** | `production.run.closed.v1` | **Connectors (push agregado a Odoo)**, Dashboards, Traceability |
-| **Publica** | `production.discrepancy.detected.v1` (V4/V7) | Rules Engine, Notifications |
-| **Consume** | `machine_event` | Pausar/reanudar corrida (de Downtime/Devices) |
-| **Consume** | `quality.disposition.v1` | Reclasificar buenas/no conformes |
-| **Consume** | `scrap.registered.v1` | Descontar buenas / ajustar total |
-| **Consume** | Canónico `production` (Ingestion) | Registro automático por delta de contador |
+| **Publica** | `nexo.production.registered.v1` | Traceability, Dashboards, Rules, (Scrap/Downtime/Quality como denominador/contexto) |
+| **Publica** | `nexo.production.order_state_changed.v1` | Dashboards, **Connectors (Odoo)**, Notifications |
+| **Publica** | `nexo.production.run_closed.v1` | **Connectors (push agregado a Odoo)**, Dashboards, Traceability |
+| **Publica** | `nexo.production.discrepancy_detected.v1` (V4/V7) | Rules Engine, Notifications |
+| **Consume** | `machine_event` (canónico) | Pausar/reanudar corrida (de Downtime/Devices) |
+| **Consume** | `nexo.quality.disposition_set.v1` | Reclasificar buenas/no conformes |
+| **Consume** | `nexo.scrap.registered.v1` | Descontar buenas / ajustar total |
+| **Consume** | Canónico categoría `production` (Ingestion) | Registro automático por delta de contador |
 
 ---
 
@@ -694,7 +696,7 @@ paths:
       summary: Registrar inspección/checklist (ejecución en piso)
       security: [{ bearer: [ nexo.quality.write ] }]
       parameters: [{ name: Idempotency-Key, in: header, required: true, schema: { type: string, format: uuid } }]
-      responses: { "201": { description: "Inspección creada; emite quality.inspection.completed" } }
+      responses: { "201": { description: "Inspección creada; emite nexo.quality.inspection_completed" } }
     get:
       summary: Listar inspecciones (por orden/línea/resultado)
       security: [{ bearer: [ nexo.quality.read ] }]
@@ -713,7 +715,7 @@ paths:
                 disposition: { type: string, enum: [aceptar, rechazar, retrabajar] }
                 reason_code: { type: string }
       responses:
-        "200": { description: "Disposición aplicada; emite quality.disposition (y scrap si 'rechazar')" }
+        "200": { description: "Disposición aplicada; emite nexo.quality.disposition_set (y scrap si 'rechazar')" }
         "403": { description: "Solo rol Calidad", $ref: '#/components/responses/Problem' }
   /defect-reason-codes:
     get:
@@ -733,12 +735,12 @@ components:
 
 | Dirección | Evento | Consumidores / Notas |
 |---|---|---|
-| **Publica** | `quality.inspection.completed.v1` | Traceability, Dashboards |
-| **Publica** | `quality.nonconformance.detected.v1` | Rules Engine, Notifications, Scrap, Downtime |
-| **Publica** | `quality.disposition.v1` (aceptar/rechazar/retrabajar) | Production (reclasifica), Scrap (si rechazo) |
-| **Publica** | `quality.measured.v1` (sensor) | Dashboards, Rules |
-| **Consume** | `production.registered.v1` | Contexto/cantidades |
-| **Consume** | Canónico `quality` / `machine_event` | Inspección desde ingesta / correlación con máquina |
+| **Publica** | `nexo.quality.inspection_completed.v1` | Traceability, Dashboards |
+| **Publica** | `nexo.quality.nonconformance_detected.v1` | Rules Engine, Notifications, Scrap, Downtime |
+| **Publica** | `nexo.quality.disposition_set.v1` (aceptar/rechazar/retrabajar) | Production (reclasifica), Scrap (si rechazo) |
+| **Publica** | `nexo.quality.measured.v1` (sensor) | Dashboards, Rules |
+| **Consume** | `nexo.production.registered.v1` | Contexto/cantidades |
+| **Consume** | Canónico categoría `quality` / `machine_event` | Inspección desde ingesta / correlación con máquina |
 
 ---
 
@@ -773,7 +775,7 @@ paths:
                 uom:         { type: string }
                 reason_code: { type: string }
                 cost:        { type: number, nullable: true }
-      responses: { "201": { description: "Scrap creado; emite scrap.registered" } }
+      responses: { "201": { description: "Scrap creado; emite nexo.scrap.registered" } }
     get:
       summary: Listar scrap (Pareto de motivos, por turno/línea)
       security: [{ bearer: [ nexo.scrap.read ] }]
@@ -791,12 +793,12 @@ components:
 
 | Dirección | Evento | Consumidores / Notas |
 |---|---|---|
-| **Publica** | `scrap.registered.v1` | Production (ajusta buenas/total), Traceability, Dashboards, **Connectors (`stock.scrap`)** |
-| **Publica** | `scrap.classified.v1` / `scrap.valued.v1` | Dashboards, Reports, Connectors |
-| **Publica** | `scrap.threshold.exceeded.v1` | Rules Engine, Notifications |
-| **Consume** | `quality.disposition.v1` (rechazo) | Crea Scrap Record |
-| **Consume** | `production.registered.v1` | Denominador Scrap Rate |
-| **Consume** | `machine_event` | Correlación con parada/setup |
+| **Publica** | `nexo.scrap.registered.v1` | Production (ajusta buenas/total), Traceability, Dashboards, **Connectors (`stock.scrap`)** |
+| **Publica** | `nexo.scrap.classified.v1` / `nexo.scrap.valued.v1` | Dashboards, Reports, Connectors |
+| **Publica** | `nexo.scrap.threshold_exceeded.v1` | Rules Engine, Notifications |
+| **Consume** | `nexo.quality.disposition_set.v1` (rechazo) | Crea Scrap Record |
+| **Consume** | `nexo.production.registered.v1` | Denominador Scrap Rate |
+| **Consume** | `machine_event` (canónico) | Correlación con parada/setup |
 
 ---
 
@@ -818,7 +820,7 @@ paths:
       summary: Abrir parada (manual, por supervisor) — Liberada→Pausada en Production
       security: [{ bearer: [ nexo.downtime.write ] }]
       parameters: [{ name: Idempotency-Key, in: header, required: true, schema: { type: string, format: uuid } }]
-      responses: { "201": { description: "Parada abierta; emite downtime.started" } }
+      responses: { "201": { description: "Parada abierta; emite nexo.downtime.started" } }
     get:
       summary: Listar paradas (Pareto de motivos, activas por línea)
       security: [{ bearer: [ nexo.downtime.read ] }]
@@ -829,7 +831,7 @@ paths:
       security: [{ bearer: [ nexo.downtime.write ] }]
       requestBody:
         content: { application/json: { schema: { type: object, required: [reason_code], properties: { reason_code: { type: string } } } } }
-      responses: { "200": { description: "Parada cerrada; emite downtime.ended" } }
+      responses: { "200": { description: "Parada cerrada; emite nexo.downtime.ended" } }
 components:
   securitySchemes: { bearer: { type: http, scheme: bearer, bearerFormat: JWT } }
 ```
@@ -838,14 +840,14 @@ components:
 
 | Dirección | Evento | Consumidores / Notas |
 |---|---|---|
-| **Publica** | `machine_event` (run/stop/fault) | Production (pausar corrida), Devices, Rules |
-| **Publica** | `downtime.started.v1` | Rules Engine, Notifications, Dashboards |
-| **Publica** | `downtime.ended.v1` | Dashboards, Traceability, Reports |
-| **Publica** | `downtime.unjustified.v1` | Rules Engine, Notifications |
-| **Publica** | `downtime.critical.v1` | Rules Engine → Notifications (escalado Mantenimiento) |
-| **Consume** | `production.registered.v1` | Inferencia por ausencia de conteo |
-| **Consume** | `quality.nonconformance.detected.v1` | Parada por calidad |
-| **Consume** | Canónico `machine_event` (Ingestion) | Estado de máquina automático |
+| **Publica** | `machine_event` (canónico; run/stop/fault) | Production (pausar corrida), Devices, Rules |
+| **Publica** | `nexo.downtime.started.v1` | Rules Engine, Notifications, Dashboards |
+| **Publica** | `nexo.downtime.ended.v1` | Dashboards, Traceability, Reports |
+| **Publica** | `nexo.downtime.unjustified.v1` | Rules Engine, Notifications |
+| **Publica** | `nexo.downtime.critical.v1` | Rules Engine → Notifications (escalado Mantenimiento) |
+| **Consume** | `nexo.production.registered.v1` | Inferencia por ausencia de conteo |
+| **Consume** | `nexo.quality.nonconformance_detected.v1` | Parada por calidad |
+| **Consume** | Canónico categoría `machine_event` (Ingestion) | Estado de máquina automático |
 
 ---
 
@@ -894,8 +896,8 @@ components:
 
 | Dirección | Evento | Notas |
 |---|---|---|
-| **Publica** | `traceability.chain.linked.v1` | (opcional) confirma correlación registro↔evento↔sync |
-| **Consume** | **Todos** los canónicos + eventos de dominio (`production.*`, `quality.*`, `scrap.*`, `downtime.*`, `reading`, `machine_event`) | Construye el historial inmutable y la genealogía |
+| **Publica** | `nexo.traceability.chain_linked.v1` | (opcional) confirma correlación registro↔evento↔sync |
+| **Consume** | **Todos** los canónicos + eventos de dominio (`nexo.production.*`, `nexo.quality.*`, `nexo.scrap.*`, `nexo.downtime.*`, `nexo.reading.ingested`, `machine_event`) | Construye el historial inmutable y la genealogía |
 
 ---
 
@@ -953,20 +955,20 @@ components:
 #### gRPC interno — Connectors es **cliente** de Production
 
 En el **pull**, Connectors traduce cada MO de Odoo y llama a `nexo.production.v1.ProductionOrders/UpsertOrder`
-(idempotente por `external_ref`). En el **push**, reacciona a `production.run.closed.v1` y usa `GetRunClosure` para armar
+(idempotente por `external_ref`). En el **push**, reacciona a `nexo.production.run_closed.v1` y usa `GetRunClosure` para armar
 el payload consolidado. No expone servidor gRPC en el MVP.
 
 #### Eventos
 
 | Dirección | Evento | Consumidores / Notas |
 |---|---|---|
-| **Publica** | `connector.order.imported.v1` | Production (vía gRPC Upsert) / Dashboards, Audit |
-| **Publica** | `connector.sync.succeeded.v1` / `connector.sync.failed.v1` | Rules Engine, Notifications, Observability |
-| **Consume** | `production.run.closed.v1` | Push agregado de producción real a la MO (avance/cierre) |
-| **Consume** | `production.order.state_changed.v1` | Mapear estado Nexo→Odoo |
-| **Consume** | `scrap.registered.v1` / `scrap.valued.v1` | Push `stock.scrap` |
-| **Consume** | `quality.disposition.v1` | (opcional) push `quality.check` |
-| **Consume** | `tenant.provisioned.v1` | Seed de configuración base del conector |
+| **Publica** | `nexo.integration.order_imported.v1` | Production (vía gRPC Upsert) / Dashboards, Audit |
+| **Publica** | `nexo.integration.odoo_sync_requested.v1` (orquestador→adapter) · `nexo.integration.odoo_sync_completed.v1` (`result{ok\|failed}`) | Rules Engine, Notifications, Observability |
+| **Consume** | `nexo.production.run_closed.v1` | Push agregado de producción real a la MO (avance/cierre) |
+| **Consume** | `nexo.production.order_state_changed.v1` | Mapear estado Nexo→Odoo |
+| **Consume** | `nexo.scrap.registered.v1` / `nexo.scrap.valued.v1` | Push `stock.scrap` |
+| **Consume** | `nexo.quality.disposition_set.v1` | (opcional) push `quality.check` |
+| **Consume** | `nexo.tenant.provisioned.v1` | Seed de configuración base del conector |
 
 ---
 
@@ -1017,11 +1019,11 @@ components:
 | Dirección | Evento | Notas |
 |---|---|---|
 | **Publica** | — | (proyecta a read models; no publica eventos de dominio) |
-| **Consume** | `production.registered.v1`, `production.run.closed.v1` | rm_production, rm_oee |
-| **Consume** | `scrap.registered.v1`/`scrap.valued.v1` | rm_scrap |
-| **Consume** | `quality.*` | rm_quality (FPY, factor Calidad) |
-| **Consume** | `downtime.*`, `machine_event` | rm_downtime (Disponibilidad, MTBF/MTTR) |
-| **Consume** | `reading` | rm_consumption |
+| **Consume** | `nexo.production.registered.v1`, `nexo.production.run_closed.v1` | rm_production, rm_oee |
+| **Consume** | `nexo.scrap.registered.v1`/`nexo.scrap.valued.v1` | rm_scrap |
+| **Consume** | `nexo.quality.*` | rm_quality (FPY, factor Calidad) |
+| **Consume** | `nexo.downtime.*`, `machine_event` | rm_downtime (Disponibilidad, MTBF/MTTR) |
+| **Consume** | `nexo.reading.ingested` | rm_consumption |
 | **Consume** | alertas de Rules/Notifications | rm_alerts |
 
 ---
@@ -1093,9 +1095,9 @@ message SendReply { string notification_id = 1; string status = 2; } // Encolada
 
 | Dirección | Evento | Notas |
 |---|---|---|
-| **Publica** | `notification.delivered.v1` / `notification.failed.v1` | Rules Engine (señal de escalado), Observability |
-| **Consume** | `tenant.provisioned.v1` | Mensaje de bienvenida |
-| **Consume** | `connector.sync.failed.v1`, `downtime.critical.v1`, `scrap.threshold.exceeded.v1`, … | Avisos de plataforma/proceso (o vía gRPC del Rules Engine) |
+| **Publica** | `nexo.notification.delivered.v1` / `nexo.notification.failed.v1` | Rules Engine (señal de escalado), Observability |
+| **Consume** | `nexo.tenant.provisioned.v1` | Mensaje de bienvenida |
+| **Consume** | `nexo.integration.odoo_sync_completed.v1` (`result=failed`), `nexo.downtime.critical.v1`, `nexo.scrap.threshold_exceeded.v1`, … | Avisos de plataforma/proceso (o vía gRPC del Rules Engine) |
 
 ---
 
@@ -1207,25 +1209,25 @@ sequenceDiagram
     PROD-->>GW: 201 Created (record_id)
     GW-->>OP: 201 (UI confirma)
 
-    PROD-)BUS: production.registered.v1 (Outbox → publish)
-    BUS-)TRC: production.registered.v1
+    PROD-)BUS: nexo.production.registered.v1 (Outbox → publish)
+    BUS-)TRC: nexo.production.registered.v1
     TRC->>TRC: Append-only al Event Store (inmutable) + genealogía
-    BUS-)DASH: production.registered.v1
+    BUS-)DASH: nexo.production.registered.v1
     DASH->>DASH: Proyectar rm_production / rm_oee (idempotente por event_id)
     DASH-->>OP: SSE andon/tablero actualizado (freshness < pocos s)
 
     Note over OP,PROD: ... la corrida continúa; al finalizar ...
     OP->>GW: POST /production/v1/runs/{runId}:close
     GW->>PROD: Cerrar corrida (consolidar totales)
-    PROD-)BUS: production.run.closed.v1
-    BUS-)CONN: production.run.closed.v1
+    PROD-)BUS: nexo.production.run_closed.v1
+    BUS-)CONN: nexo.production.run_closed.v1
     CONN->>PROD: gRPC GetRunClosure(runId) - snapshot consolidado
     PROD-->>CONN: RunClosure (good=..., nonconform=..., external_ref MO)
     CONN->>CONN: ACL: traducir a modelo Odoo + clave idempotencia (dedup_key)
     CONN->>ODOO: Reportar avance/cierre de MO (Sync Job)
     alt Éxito
         ODOO-->>CONN: OK (referencia externa)
-        CONN-)BUS: connector.sync.succeeded.v1
+        CONN-)BUS: nexo.integration.odoo_sync_completed.v1 (result=ok)
         BUS-)TRC: correlación registro→Sync Job→ERP (cierra la cadena)
         BUS-)PROD: (orden → Sincronizada)
     else ERP caído / error transitorio
@@ -1237,11 +1239,11 @@ sequenceDiagram
 
 1. **Idempotencia de extremo a extremo:** `Idempotency-Key` (REST) + `dedup_key` (evento) + `event_id` en consumidores
    ⇒ ni doble registro por reenvío offline-first ni doble proyección en el read model.
-2. **Outbox transaccional:** el `production.registered` se publica **atómicamente** con la escritura del registro en la DB
+2. **Outbox transaccional:** el `nexo.production.registered` se publica **atómicamente** con la escritura del registro en la DB
    del tenant (baseline §4.1), evitando pérdidas/duplicados respecto del estado local.
 3. **CQRS/eventual consistency:** Dashboards va "un poco atrás" del write side y comunica **frescura** en la UI; puede
    **reconstruirse** reproyectando desde el log de eventos.
-4. **Push agregado por cierre de corrida:** Connectors **no** empuja por cada evento a Odoo; consolida por `run.closed`
+4. **Push agregado por cierre de corrida:** Connectors **no** empuja por cada evento a Odoo; consolida por `nexo.production.run_closed`
    para acotar la carga sobre el ERP (INT-01). Ante ERP caído, **store-and-forward** y la captura nunca se bloquea.
 5. **Cadena de trazabilidad:** Traceability cierra el círculo evento→registro→Sync Job→referencia ERP, habilitando recall
    y RCA (ver [../specs/specs/traceability.md](../specs/specs/traceability.md)).
@@ -1255,7 +1257,7 @@ sequenceDiagram
 | SC-01 | **Estilo de identificador de recursos en URLs** (UUID v7 vs. ULID) | Impacta ordenamiento por cursor y sharding | UUID v7 (ordenable temporalmente) — confirmar en [03-data-schema.md](./03-data-schema.md) |
 | SC-02 | **Transporte edge→Ingestion**: REST batch (definido aquí) vs. gRPC streaming | El baseline admite "HTTPS/gRPC outbound"; el MVP procesa manual + CSV | REST `/events:batch` + `/imports:csv`; evaluar gRPC streaming al habilitar protocolos industriales en V1 ([05-edge-agent.md](./05-edge-agent.md)) |
 | SC-03 | **Tiempo real de Dashboards**: SSE vs. WebSocket vs. polling | Andon exige "en vivo" (frescura de pocos s) | SSE para andon/tablero (unidireccional); reevaluar WS si se requiere interacción bidireccional |
-| SC-04 | **Caché y TTL de `ResolveConnection`** e invalidación ante `tenant.state_changed` | Llamada de altísima frecuencia a Tenancy | Caché in-proc con TTL corto + invalidación por evento; confirmar en [01-multi-tenancy-connection.md](./01-multi-tenancy-connection.md) |
+| SC-04 | **Caché y TTL de `ResolveConnection`** e invalidación ante `nexo.tenant.state_changed` | Llamada de altísima frecuencia a Tenancy | Caché in-proc con TTL corto + invalidación por evento; confirmar en [01-multi-tenancy-connection.md](./01-multi-tenancy-connection.md) |
 | SC-05 | **Naming/particionado de topics** por `type` vs. por dominio, y política de retención para reproceso | Afecta orden, paralelismo y reconstrucción de read models | Definir en [02-event-model.md](./02-event-model.md) (canales `evt.*`, clave `tenant_id`+`aggregate_id`) |
 | SC-06 | **Contrato exacto que detiene el escalado** (entregada vs. leída vs. acusada) entre Notifications y Rules Engine | Rules Engine llega en V1; MVP puede incluir alerta mínima (parada prolongada) | `acusada` detiene escalado; confirmar con `rules-engine.md` |
 | SC-07 | **Superficie de Identity por tenant** (gestión de usuarios operativos) como endpoints propios vs. dentro de cada servicio | MVP RBAC básico (ver modules.md preguntas abiertas) | Endpoints de usuarios/roles bajo `identity/v1` (ámbito tenant), gobernados por `nexo.identity.admin` |

@@ -39,7 +39,7 @@ Ingestion, el broker, Traceability y los conectores operen sobre el envelope sin
 |---|---|:--:|---|---|
 | `event_id` | `string` (UUID) | ✔ | Identidad única e inmutable del evento. | **UUIDv7** (ordenable en el tiempo); base de idempotencia junto con `dedup_key`. |
 | `tenant_id` | `string` (UUID) | ✔ | Empresa dueña del evento. | Resuelto en la admisión (host/subdominio o claim JWT); **nunca** lo define el payload ([data-ingestion.md](../specs/specs/data-ingestion.md) §3). Clave de partición por defecto. |
-| `type` | `string` | ✔ | Tipo canónico del evento: `nexo.<domain>.<event>`. | p. ej. `nexo.production.recorded`. El segmento `<domain>` es la **categoría** que las specs llaman `type` (production/scrap/quality/downtime/reading/machine_event/custom) + dominios de plataforma (tenancy/device/integration). Ver §1.4. |
+| `type` | `string` | ✔ | Tipo canónico del evento: `nexo.<domain>.<event>`. | p. ej. `nexo.production.registered`. El segmento `<domain>` es la **categoría** que las specs llaman `type` (production/scrap/quality/downtime/reading/machine_event/custom) + dominios de plataforma (tenant/device/integration). Ver §1.4. |
 | `occurred_at` | `string` (date-time) | ✔ | **Tiempo de origen**: cuándo ocurrió el hecho en planta. | RFC 3339 / ISO-8601 UTC. Preferente para negocio; puede venir del PLC/OPC UA o sellarse en el agente ([data-ingestion.md](../specs/specs/data-ingestion.md) §8). |
 | `ingested_at` | `string` (date-time) | ✔ | **Tiempo de ingesta**: cuándo la nube admitió y persistió el evento. | Diagnóstico de latencia (`ingested_at − occurred_at`) y detección de tardíos. |
 | `source` | `enum` | ✔ | Procedencia: `device` \| `manual` \| `api` \| `file`. | Determina qué metadatos de origen acompañan ([traceability.md](../specs/specs/traceability.md) §3.1). |
@@ -141,13 +141,13 @@ Ingestion, el broker, Traceability y los conectores operen sobre el envelope sin
 > específico de `type`+`schema_version` resuelto en el registry (§3). Se evita un único mega-schema para no acoplar el
 > envelope a cada dominio.
 
-### 1.3 Ejemplo — `nexo.production.recorded` (v1)
+### 1.3 Ejemplo — `nexo.production.registered` (v1)
 
 ```json
 {
   "event_id": "018f7c2a-9b3e-7a41-8c1d-2f5e6a7b8c90",
   "tenant_id": "9c3b1e77-2d4a-4b8f-9e1a-6f0c2d3b4a55",
-  "type": "nexo.production.recorded",
+  "type": "nexo.production.registered",
   "occurred_at": "2026-07-11T14:03:12.480Z",
   "ingested_at": "2026-07-11T14:03:18.902Z",
   "source": "device",
@@ -182,14 +182,14 @@ Ingestion, el broker, Traceability y los conectores operen sobre el envelope sin
 
 Las specs usan la forma corta `type=production | scrap | quality | downtime | reading | machine_event | custom`
 para el **enrutamiento primario**. En el diseño, ese valor es el **segmento `<domain>`** de un identificador
-más específico, para poder distinguir eventos dentro del mismo dominio (p. ej. `downtime.started` vs `downtime.ended`).
+más específico, para poder distinguir eventos dentro del mismo dominio (p. ej. `nexo.downtime.started` vs `nexo.downtime.ended`).
 
 | Concepto | Forma | Ejemplo |
 |---|---|---|
 | **Categoría** (specs `type=`) | `<domain>` | `production` |
-| **Tipo canónico** (envelope `type`) | `nexo.<domain>.<event>` | `nexo.production.recorded` |
-| **Topic** (broker) | `nexo.<domain>.<event>.v<major>` | `nexo.production.recorded.v1` |
-| **Contrato .NET** (MassTransit) | `PascalCase` | `ProductionRecorded` |
+| **Tipo canónico** (envelope `type`) | `nexo.<domain>.<event>` | `nexo.production.registered` |
+| **Topic** (broker) | `nexo.<domain>.<event>.v<major>` | `nexo.production.registered.v1` |
+| **Contrato C#** (MassTransit) | `PascalCase` | `ProductionRegistered` |
 
 ---
 
@@ -207,7 +207,7 @@ ADR-T2) exige separarlos.
 | Acoplamiento | Al modelo de dominio (puede cambiar seguido) | Contrato versionado y gobernado (cambia con cuidado) |
 | Forma | Objeto de dominio rico (VOs, entidades) | **DTO plano** serializable (JSON), envelope canónico |
 | Estabilidad | Interna; refactorizable libremente | Pública; sujeta a compatibilidad (§3) |
-| Ejemplo | `ProductionRunClosedDomainEvent` (recalcula acumulados) | `nexo.production.run_closed.v1` (dispara push a Odoo) |
+| Ejemplo | `RunClosedDomainEvent` (recalcula acumulados) | `nexo.production.run_closed.v1` (dispara push a Odoo) |
 
 **Flujo típico** (Clean Architecture + Outbox):
 
@@ -227,12 +227,12 @@ flowchart LR
 
 ### 2.1 Convención de nombres
 
-- **Domain events:** PascalCase con sufijo `DomainEvent` y **verbo en pasado**: `ProductionRecordedDomainEvent`,
+- **Domain events:** PascalCase con sufijo `DomainEvent` y **verbo en pasado**: `ProductionRegisteredDomainEvent`,
   `DowntimeStartedDomainEvent`. Viven en `Nexo.<Servicio>.Domain`.
-- **Integration events (contrato .NET):** PascalCase, **verbo en pasado**, sin sufijo: `ProductionRecorded`,
+- **Integration events (contrato C#):** PascalCase, **verbo en pasado**, sin sufijo: `ProductionRegistered`,
   `DowntimeStarted`, `OdooSyncCompleted`. Viven en un paquete de contratos compartido (`Nexo.Contracts.<Domain>`),
   para que productor y consumidores compartan el tipo.
-- **Tipo canónico (wire):** `nexo.<domain>.<event>` en `snake_case`: `nexo.production.recorded`.
+- **Tipo canónico (wire):** `nexo.<domain>.<event>` en `snake_case`: `nexo.production.registered`.
 - **Comandos** (no eventos): imperativo presente: `PushProductionToOdoo`, `ProvisionTenant`. Se envían punto-a-punto, no se
   publican como hechos.
 
@@ -307,13 +307,13 @@ retención larga** ([traceability.md](../specs/specs/traceability.md)): reconstr
 nexo.<domain>.<event>.v<major>
 └┬─┘ └──┬──┘ └──┬──┘ └──┬──┘
  │      │       │       └─ versión mayor del contrato (= schema_version)
- │      │       └───────── evento en snake_case (pasado): recorded, started, ended...
+ │      │       └───────── evento en snake_case (pasado): registered, started, ended...
  │      └───────────────── bounded context / categoría: production, scrap, quality,
- │                          downtime, reading, machine_event, device, tenancy, integration, custom
+ │                          downtime, reading, machine_event, device, tenant, integration, custom
  └──────────────────────── raíz del namespace de la plataforma
 ```
 
-Ejemplos: `nexo.production.recorded.v1`, `nexo.downtime.started.v1`, `nexo.reading.ingested.v1`,
+Ejemplos: `nexo.production.registered.v1`, `nexo.downtime.started.v1`, `nexo.reading.ingested.v1`,
 `nexo.integration.odoo_sync_completed.v1`.
 
 **Topic por tipo de evento** (fine-grained), no un topic gigante por dominio. Ventajas: retención y particiones
@@ -331,18 +331,18 @@ esquema aislada. El costo (más topics) es asumible en MSK Serverless.
 | Evento | Clave de partición | Por qué |
 |---|---|---|
 | `nexo.reading.ingested.v1` | `tenant_id \| device_id` | El delta de contador depende del orden por dispositivo |
-| `nexo.production.recorded.v1` | `tenant_id \| order_id` | Acumulados por orden en secuencia |
+| `nexo.production.registered.v1` | `tenant_id \| order_id` | Acumulados por orden en secuencia |
 | `nexo.production.run_closed.v1` | `tenant_id \| order_id` | Cierre después de todos los registros de la corrida |
 | `nexo.downtime.started.v1` / `ended.v1` | `tenant_id \| asset_id` | Inicio/fin ordenados por máquina |
 | `nexo.device.status_changed.v1` | `tenant_id \| device_id` | Transiciones de estado ordenadas |
-| `nexo.tenancy.provisioned.v1` | `tenant_id` | Evento de plataforma (topic global) |
+| `nexo.tenant.provisioned.v1` | `tenant_id` | Evento de plataforma (topic global) |
 
 > **Orden global.** Kafka **no** garantiza orden entre particiones. Los dominios que necesiten línea de tiempo global
 > reordenan por `occurred_at` dentro de ventanas de tolerancia ([data-ingestion.md](../specs/specs/data-ingestion.md) §8).
 
 ```mermaid
 flowchart TB
-    subgraph T["Topic nexo.production.recorded.v1"]
+    subgraph T["Topic nexo.production.registered.v1"]
         P0["Partición 0"]
         P1["Partición 1"]
         P2["Partición 2"]
@@ -371,7 +371,7 @@ flowchart TB
 |---|---|---|
 | Eventos de dominio (`production`, `scrap`, `quality`, `downtime`) | 30 días | **Event Store** por tenant (inmutable, retención larga) — [traceability.md](../specs/specs/traceability.md) |
 | `reading.ingested` (alta frecuencia) | 7 días | **Time-series** del tenant (append-only, downsampling) — [scalability.md](../specs/specs/scalability.md) §5 |
-| Eventos de plataforma (`tenancy`, `device`, `integration`) | 30 días | Control Plane DB / Audit |
+| Eventos de plataforma (`tenant`, `device`, `integration`) | 30 días | Control Plane DB / Audit |
 
 - **Reproceso / replay:** re-consumir desde un offset o timestamp reconstruye read models (CQRS) sin violar
   inmutabilidad ([data-ingestion.md](../specs/specs/data-ingestion.md) §9). Para reprocesos que exceden la retención de
@@ -440,9 +440,9 @@ CREATE TABLE outbox (
     tenant_id       UUID        NOT NULL,
     aggregate_type  TEXT        NOT NULL,                 -- p. ej. 'ProductionOrder'
     aggregate_id    TEXT        NOT NULL,                 -- p. ej. 'OP-2026-000482'
-    type            TEXT        NOT NULL,                 -- 'nexo.production.recorded'
+    type            TEXT        NOT NULL,                 -- 'nexo.production.registered'
     schema_version  INT         NOT NULL DEFAULT 1,
-    topic           TEXT        NOT NULL,                 -- 'nexo.production.recorded.v1'
+    topic           TEXT        NOT NULL,                 -- 'nexo.production.registered.v1'
     partition_key   TEXT        NOT NULL,                 -- 'tenant|order_id'
     envelope        JSONB       NOT NULL,                 -- envelope canónico completo
     headers         JSONB       NOT NULL DEFAULT '{}'::jsonb,
@@ -513,30 +513,33 @@ CREATE INDEX ix_processed_dedup ON processed_events (consumer, tenant_id, dedup_
 
 ---
 
-## 6. Catálogo de eventos del MVP
+## 6. Catálogo canónico de eventos (MVP)
 
-Eventos clave del MVP. **Tipo canónico** = valor del envelope `type`; **contrato .NET** = clase de integración
-(PascalCase). Todos viajan en el envelope de §1. `PK` = clave de partición.
+Esta tabla es la **única fuente de verdad** de los nombres de evento del MVP: todo otro documento (en especial
+[04-service-contracts.md](./04-service-contracts.md)) **referencia** estos mismos nombres, no los redefine. **`type (wire)`**
+= valor del envelope `type` (`nexo.<domain>.<event>`, minúscula, `snake_case`, verbo en pasado); **`topic`** = el topic
+Kafka/MSK (`type` + `.v<major>`); **Evento (contrato C#)** = clase de integración PascalCase mapeada 1:1 al `type`. Todos
+viajan en el envelope de §1.
 
-| Evento (contrato .NET) | Tipo canónico / topic `v1` | Productor | Consumidores | PK | Payload (resumen) |
-|---|---|---|---|---|---|
-| **TenantProvisioned** | `nexo.tenancy.provisioned` | Tenant Provisioning (CP) | Observability, Admin, (bootstrap de servicios del tenant) | `tenant_id` | `tenant_id`, `plan`, `db_ref`, `region`, `provisioned_at`, `admin_user_ref` |
-| **ReadingIngested** | `nexo.reading.ingested` | Ingestion | Devices, Rules Engine, Dashboards (agg), Traceability (muestreado) | `tenant_id\|device_id` | `device_id`, `tag`, `value`, `uom`, `quality`, `occurred_at` |
-| **ProductionRecorded** | `nexo.production.recorded` | Production | Traceability, Dashboards, Rules Engine, Connectors (agrega) | `tenant_id\|order_id` | `order_id`, `run_id`, `product_sku`, `good_qty`, `nonconforming_qty`, `uom` |
-| **RunClosed** | `nexo.production.run_closed` | Production | **Connectors (dispara push Odoo)**, Dashboards, Traceability | `tenant_id\|order_id` | `run_id`, `order_id`, `totals{good,nonconforming,scrap}`, `operative_time`, `closed_by` |
-| **ScrapRegistered** | `nexo.scrap.registered` | Scrap | Production (ajusta total), Traceability, Dashboards, Connectors | `tenant_id\|order_id` | `order_id`, `product_sku`, `qty`, `reason_code`, `cost?`, `lot?` |
-| **QualityInspected** | `nexo.quality.inspection_completed` | Quality | Traceability, Dashboards, Production (reclasifica) | `tenant_id\|order_id` | `inspection_id`, `order_id`, `result{pass\|fail}`, `measurements[]`, `defects[]` |
-| **QualityDisposition** | `nexo.quality.disposition` | Quality | Production (buenas/no conformes), Scrap (si rechazo) | `tenant_id\|order_id` | `subject{lot\|serial}`, `disposition{rework\|use_as_is\|scrap}`, `by` |
-| **DowntimeStarted** | `nexo.downtime.started` | Downtime | Rules Engine, Notifications, Dashboards, Production (pausa) | `tenant_id\|asset_id` | `asset_id`, `started_at`, `reason_code?`, `planned` |
-| **DowntimeEnded** | `nexo.downtime.ended` | Downtime | Dashboards, Traceability, Reports | `tenant_id\|asset_id` | `asset_id`, `ended_at`, `duration_s`, `reason_code` |
-| **DeviceStatusChanged** | `nexo.device.status_changed` | Devices (desde presencia del edge) | Observability, Dashboards, Rules Engine, Notifications | `tenant_id\|device_id` | `device_id`, `status{online\|offline\|degraded}`, `last_seen`, `agent_id` |
-| **OdooSyncRequested** | `nexo.integration.odoo_sync_requested` | Connectors (orquestador) | Connectors · Adapter Odoo | `tenant_id\|job_id` | `job_id`, `entity{mo\|scrap\|quality}`, `nexo_ref`, `dedup_key` |
-| **OdooSyncCompleted** | `nexo.integration.odoo_sync_completed` | Connectors · Adapter Odoo | Production/Scrap/Quality (estado sync), Traceability, Observability | `tenant_id\|job_id` | `job_id`, `result{ok\|failed}`, `external_ref?`, `error?` |
+| Evento (contrato C#) | type (wire) | topic | Productor | Consumidores | Clave de partición | Payload resumido |
+|---|---|---|---|---|---|---|
+| **TenantProvisioned** | `nexo.tenant.provisioned` | `nexo.tenant.provisioned.v1` | Tenant Provisioning (CP) | Observability, Admin, (bootstrap de servicios del tenant) | `tenant_id` | `tenant_id`, `plan`, `db_ref`, `region`, `provisioned_at`, `admin_user_ref` |
+| **ReadingIngested** | `nexo.reading.ingested` | `nexo.reading.ingested.v1` | Ingestion | Devices, Rules Engine, Dashboards (agg), Traceability (muestreado) | `tenant_id\|device_id` | `device_id`, `tag`, `value`, `uom`, `quality`, `occurred_at` |
+| **ProductionRegistered** | `nexo.production.registered` | `nexo.production.registered.v1` | Production | Traceability, Dashboards, Rules Engine, Connectors (agrega) | `tenant_id\|order_id` | `order_id`, `run_id`, `product_sku`, `good_qty`, `nonconforming_qty`, `uom` |
+| **RunClosed** | `nexo.production.run_closed` | `nexo.production.run_closed.v1` | Production | **Connectors (dispara push Odoo)**, Dashboards, Traceability | `tenant_id\|order_id` | `run_id`, `order_id`, `totals{good,nonconforming,scrap}`, `operative_time`, `closed_by` |
+| **ScrapRegistered** | `nexo.scrap.registered` | `nexo.scrap.registered.v1` | Scrap | Production (ajusta total), Traceability, Dashboards, Connectors | `tenant_id\|order_id` | `order_id`, `product_sku`, `qty`, `reason_code`, `cost?`, `lot?` |
+| **QualityInspected** | `nexo.quality.inspection_completed` | `nexo.quality.inspection_completed.v1` | Quality | Traceability, Dashboards, Production (reclasifica) | `tenant_id\|order_id` | `inspection_id`, `order_id`, `result{pass\|fail}`, `measurements[]`, `defects[]` |
+| **QualityDispositionSet** | `nexo.quality.disposition_set` | `nexo.quality.disposition_set.v1` | Quality | Production (buenas/no conformes), Scrap (si rechazo) | `tenant_id\|order_id` | `subject{lot\|serial}`, `disposition{rework\|use_as_is\|scrap}`, `by` |
+| **DowntimeStarted** | `nexo.downtime.started` | `nexo.downtime.started.v1` | Downtime | Rules Engine, Notifications, Dashboards, Production (pausa) | `tenant_id\|asset_id` | `asset_id`, `started_at`, `reason_code?`, `planned` |
+| **DowntimeEnded** | `nexo.downtime.ended` | `nexo.downtime.ended.v1` | Downtime | Dashboards, Traceability, Reports | `tenant_id\|asset_id` | `asset_id`, `ended_at`, `duration_s`, `reason_code` |
+| **DeviceStatusChanged** | `nexo.device.status_changed` | `nexo.device.status_changed.v1` | Devices (desde presencia del edge) | Observability, Dashboards, Rules Engine, Notifications | `tenant_id\|device_id` | `device_id`, `status{online\|offline\|degraded}`, `last_seen`, `agent_id` |
+| **OdooSyncRequested** | `nexo.integration.odoo_sync_requested` | `nexo.integration.odoo_sync_requested.v1` | Connectors (orquestador) | Connectors · Adapter Odoo | `tenant_id\|job_id` | `job_id`, `entity{mo\|scrap\|quality}`, `nexo_ref`, `dedup_key` |
+| **OdooSyncCompleted** | `nexo.integration.odoo_sync_completed` | `nexo.integration.odoo_sync_completed.v1` | Connectors · Adapter Odoo | Production/Scrap/Quality (estado sync), Traceability, Observability | `tenant_id\|job_id` | `job_id`, `result{ok\|failed}`, `external_ref?`, `error?` |
 
 **Notas de catálogo:**
 
 - **`RunClosed` → push a Odoo agregado (INT-01).** El reporte de producción a Odoo se agrega **por cierre de corrida**,
-  no por cada `ProductionRecorded`; por eso `RunClosed` es el disparador de `OdooSyncRequested`
+  no por cada `ProductionRegistered`; por eso `RunClosed` es el disparador de `OdooSyncRequested`
   ([integrations.md](../specs/specs/integrations.md) §4, [production.md](../specs/specs/production.md) §3).
 - **`ReadingIngested`** de alta frecuencia se persiste en **time-series** y solo genera evento de dominio según la config
   de la señal ([data-ingestion.md](../specs/specs/data-ingestion.md) §6); Traceability consume una **muestra/resumen**,
@@ -555,7 +558,7 @@ Eventos clave del MVP. **Tipo canónico** = valor del envelope `type`; **contrat
 public sealed record EventEnvelope<TPayload>(
     Guid            EventId,        // UUIDv7
     Guid            TenantId,
-    string          Type,           // "nexo.production.recorded"
+    string          Type,           // "nexo.production.registered"
     DateTimeOffset  OccurredAt,
     DateTimeOffset  IngestedAt,
     string          Source,         // device | manual | api | file
@@ -573,7 +576,7 @@ public sealed record EventEnvelope<TPayload>(
 public sealed record EventContext(string? Site, string? Line, string? Asset);
 
 // Nexo.Contracts.Production — payload del evento de integración
-public sealed record ProductionRecorded(
+public sealed record ProductionRegistered(
     string OrderId,
     string RunId,
     string ProductSku,
@@ -609,7 +612,7 @@ services.AddMassTransit(x =>
     });
 
     // (2) Consumidores (idempotentes vía inbox)
-    x.AddConsumer<ProductionRecordedConsumer>(c =>
+    x.AddConsumer<ProductionRegisteredConsumer>(c =>
         c.UseMessageRetry(r => r.Exponential(
             retryLimit:   5,
             minInterval:  TimeSpan.FromSeconds(1),
@@ -623,10 +626,10 @@ services.AddMassTransit(x =>
     x.AddRider(rider =>
     {
         // Productores: contrato .NET -> topic versionado
-        rider.AddProducer<ProductionRecorded>("nexo.production.recorded.v1");
+        rider.AddProducer<ProductionRegistered>("nexo.production.registered.v1");
         rider.AddProducer<RunClosed>("nexo.production.run_closed.v1");
 
-        rider.AddConsumer<ProductionRecordedConsumer>();
+        rider.AddConsumer<ProductionRegisteredConsumer>();
 
         rider.UsingKafka((context, k) =>
         {
@@ -641,15 +644,15 @@ services.AddMassTransit(x =>
             });
 
             // Endpoint de consumo: topic + consumer group por servicio
-            k.TopicEndpoint<ProductionRecorded>(
-                topic: "nexo.production.recorded.v1",
+            k.TopicEndpoint<ProductionRegistered>(
+                topic: "nexo.production.registered.v1",
                 groupId: "nexo.production",
                 e =>
                 {
                     e.AutoOffsetReset      = AutoOffsetReset.Earliest;
                     e.CreateIfMissing(t => { t.NumPartitions = 12; t.ReplicationFactor = 3; });
                     e.ConcurrentMessageLimit = 8;
-                    e.ConfigureConsumer<ProductionRecordedConsumer>(context);
+                    e.ConfigureConsumer<ProductionRegisteredConsumer>(context);
                 });
         });
     });
@@ -662,7 +665,7 @@ services.AddMassTransit(x =>
 // El productor fija la Kafka key = clave de partición del §4.2
 await _producer.Produce(
     key: $"{tenantId}|{orderId}",           // co-ordena por orden dentro del tenant
-    message: new ProductionRecorded(/* ... */),
+    message: new ProductionRegistered(/* ... */),
     pipe: Pipe.Execute<KafkaSendContext>(ctx =>
     {
         ctx.Headers.Set("nexo-correlation-id", correlationId.ToString());
@@ -674,12 +677,12 @@ await _producer.Produce(
 **Consumidor idempotente** (usa el inbox de §5.2):
 
 ```csharp
-public sealed class ProductionRecordedConsumer(
+public sealed class ProductionRegisteredConsumer(
     IProcessedEventStore inbox,           // processed_events
     IProductionProjector projector)
-    : IConsumer<ProductionRecorded>
+    : IConsumer<ProductionRegistered>
 {
-    public async Task Consume(ConsumeContext<ProductionRecorded> ctx)
+    public async Task Consume(ConsumeContext<ProductionRegistered> ctx)
     {
         var eventId = ctx.MessageId ?? throw new InvalidOperationException("MessageId requerido");
 

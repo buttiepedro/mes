@@ -12,8 +12,10 @@ public sealed class ProductionDbContextDesignTimeFactory : IDesignTimeDbContextF
 {
     public ProductionDbContext CreateDbContext(string[] args)
     {
+        // Puerto 5433: es el que expone el Postgres de docker-compose en el host
+        // (el 5432 suele estar tomado por un PostgreSQL nativo instalado en la máquina).
         var connectionString = Environment.GetEnvironmentVariable("PRODUCTION_DB_CONNECTION")
-            ?? "Host=localhost;Port=5432;Database=nexo_tenant_demo;Username=nexo;Password=nexo";
+            ?? "Host=localhost;Port=5433;Database=nexo_tenant_demo;Username=nexo;Password=nexo";
 
         var options = new DbContextOptionsBuilder<ProductionDbContext>()
             .UseNpgsql(connectionString, npgsql =>

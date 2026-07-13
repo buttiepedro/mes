@@ -20,7 +20,10 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexo}
       POSTGRES_DB: nexo_controlplane
     ports:
-      - "5432:5432"
+      # 5433 en el HOST -> 5432 en el contenedor.
+      # Se usa 5433 a propósito: el 5432 suele estar ocupado por un PostgreSQL nativo instalado
+      # en la máquina, y en ese caso "localhost:5432" iría al Postgres equivocado.
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./deploy/local/postgres-init:/docker-entrypoint-initdb.d:ro

@@ -1,14 +1,18 @@
 # Nexo — Backlog inicial (épicas y user stories)
 
-> **Documento:** `specs/roadmap/backlog.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-11
+> **Documento:** `specs/roadmap/backlog.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-13
 > **Roles:** Product Manager · Software Architect · UX Designer
-> **Relacionados:** [roadmap.md](./roadmap.md) · [milestones.md](./milestones.md) · [vision.md](./vision.md) · [idea.md](../idea.md) · [modules.md](../specs/modules.md) · [users-permissions.md](../specs/users-permissions.md) · [product.md](../specs/product.md)
+> **Relacionados:** [roadmap.md](./roadmap.md) · [milestones.md](./milestones.md) · [vision.md](./vision.md) · [idea.md](../idea.md) · [layered-architecture.md](../specs/layered-architecture.md) · [master-data.md](../specs/master-data.md) · [modules.md](../specs/modules.md) · [users-permissions.md](../specs/users-permissions.md) · [product.md](../specs/product.md)
 
 ## Resumen ejecutivo
 
 Este documento contiene el **backlog inicial de producto** de Nexo, organizado por **épicas** (una por microservicio / bounded context canónico, brief §5.1) y desglosado en **user stories** con el formato *"Como &lt;rol&gt; quiero &lt;objetivo&gt; para &lt;beneficio&gt;"*. Cada historia lleva su **prioridad MoSCoW** y su **tag de fase** (MVP / V1 / V2 / Enterprise), de modo que el backlog sea directamente derivable del [roadmap](./roadmap.md) y verificable contra los [hitos](./milestones.md).
 
-Las historias del **MVP** están marcadas de forma explícita (columna **MVP** con el ícono ✅) para separar sin ambigüedad el alcance mínimo viable —captura de Producción/Scrap/Calidad/Paradas/Eventos, **carga manual en tablet + datalogger vía carga de archivo/CSV/Excel**, dashboard en tiempo real, integración Odoo y multi-tenant DB-per-tenant (la **captura automática por protocolos industriales** —S7/OPC UA/Modbus/MQTT— pasa a V1)— del resto de la evolución. El backlog cubre **todos los módulos** del brief, incluidos los servicios compartidos del Control Plane y los de fase futura (IA/visión), para dar una vista completa del producto aunque muchas historias sean posteriores al MVP.
+Las historias del **MVP** están marcadas de forma explícita (columna **MVP** con el ícono ✅) para separar sin ambigüedad el alcance mínimo viable —captura de Producción/Scrap/Calidad/Paradas/Eventos, **formularios de captura en tablet + datalogger vía carga de archivo/CSV/Excel**, tablero en tiempo real y multi-tenant DB-per-tenant (la **captura automática por protocolos industriales** —S7/OPC UA/Modbus/MQTT— pasa a V1)— del resto de la evolución. El backlog cubre **todos los módulos** del brief, incluidos los servicios compartidos del Control Plane y los de fase futura (IA/visión), para dar una vista completa del producto aunque muchas historias sean posteriores al MVP.
+
+> **🔺 Actualización 2026-07-13 — modelo por capas + ERP opcional.** La adopción del **modelo de 4 capas** (ver [layered-architecture.md](../specs/layered-architecture.md)) agrega **cinco épicas nuevas** —**E21 Digital Twin**, **E22 Work Model (Procesos)**, **E23 Execution**, **E24 Event Engine** y **E25 Master Data**— con historias en el MVP. Y cambia dos cosas de alcance:
+> - El MVP suma **master data propia mínima** (E25): sin ella el sistema no puede operar sin ERP. Es el mayor sobrecosto del cambio.
+> - Las historias del **conector Odoo (E13)** pasan a ser **opcionales y no bloqueantes**: aplican solo a tenants en **modo conectado** (reencuadre de INT-01 en el [tablero](../open-questions-board.md)).
 
 Los **roles** usados en las historias son los canónicos (brief §9): personas del tenant (Operario, Supervisor, Calidad, Producción, Mantenimiento, Gerencia, Administrador del tenant, Integraciones) y roles globales del Control Plane (Super Administrador, Soporte, Implementador, Partner). Este backlog es un punto de partida vivo: se refina y se estima con el equipo, y se sincroniza con [milestones.md](./milestones.md) a medida que avanza cada fase.
 
@@ -47,6 +51,11 @@ Los **roles** usados en las historias son los canónicos (brief §9): personas d
 | E18 | [Files / Media](#e18--files--media) | Compartido | MVP→V1 |
 | E19 | [Audit](#e19--audit) | Por tenant/CP | MVP |
 | E20 | [AI / Computer Vision](#e20--ai--computer-vision) | Compartido | Enterprise |
+| **E21** | [**Digital Twin (Capa 1)**](#e21--digital-twin-capa-1) | Por tenant | MVP |
+| **E22** | [**Work Model / Procesos (Capa 2)**](#e22--work-model--procesos-capa-2) | Por tenant | MVP |
+| **E23** | [**Execution / Ejecución (Capa 3)**](#e23--execution--ejecución-capa-3) | Por tenant | MVP |
+| **E24** | [**Event Engine / Motor de eventos (Capa 4)**](#e24--event-engine--motor-de-eventos-capa-4) | Por tenant | MVP |
+| **E25** | [**Master Data**](#e25--master-data) | Por tenant | MVP |
 
 ---
 
@@ -248,14 +257,15 @@ Los **roles** usados en las historias son los canónicos (brief §9): personas d
 
 ## E13 · Connectors / Integrations
 
-**Objetivo de la épica:** sincronización con ERPs vía Conectores + ACL, mapeos, jobs de sincronización y reintentos; evolución a multi-ERP.
+**Objetivo de la épica:** sincronización con ERPs vía Conectores + ACL, mapeos, jobs de sincronización y reintentos; evolución a multi-ERP. **Desde 2026-07-13 el ERP es un conector OPCIONAL:** estas historias aplican solo a tenants en **modo conectado** y **no bloquean** el cierre del MVP.
 
 | ID | User story | Rol | MoSCoW | Fase | MVP |
 |---|---|---|---|---|---|
-| US-INT-01 | Como **Integraciones** quiero conectar Nexo con Odoo vía un conector desacoplado (ACL) para sincronizar sin acoplar el core. | Integraciones | Must | MVP | ✅ |
-| US-INT-02 | Como **Integraciones** quiero mapear el *pull* de MO/Producto/UoM/Motivos y el *push* de producción real y scrap entre Nexo y Odoo para alinear los modelos. | Integraciones | Must | MVP | ✅ |
+| US-INT-01 | Como **Integraciones** quiero conectar Nexo con Odoo vía un conector desacoplado (ACL) para sincronizar sin acoplar el core. *(Opcional: solo modo conectado.)* | Integraciones | Should | MVP | ✅ |
+| US-INT-02 | Como **Integraciones** quiero mapear el *pull* de MO/Producto/UoM/Motivos y el *push* de producción real y scrap entre Nexo y Odoo para alinear los modelos. *(Opcional: solo modo conectado.)* | Integraciones | Should | MVP | ✅ |
 | US-INT-03 | Como **plataforma** quiero ejecutar jobs de sincronización con reintentos para tolerar fallos transitorios del ERP. | Integraciones | Should | MVP | ✅ |
 | US-INT-04 | Como **Integraciones** quiero ver el estado de cada job de sincronización para diagnosticar problemas. | Integraciones | Should | MVP | ✅ |
+| US-INT-07 | Como **Administrador del tenant** quiero **operar sin ningún ERP conectado**, con mi master data propia, para usar Nexo como sistema autónomo de ejecución. | Administrador | Must | MVP | ✅ |
 | US-INT-05 | Como **Integraciones** quiero conectar con SAP/Dynamics/Oracle reutilizando el patrón ACL para soportar multi-ERP. | Integraciones | Must | V2 | |
 | US-INT-06 | Como **Integraciones** quiero integrar datos de un MES/SCADA existente (sin comandar máquinas) para unificar el dato de planta. | Integraciones | Should | Enterprise | |
 
@@ -299,8 +309,10 @@ Los **roles** usados en las historias son los canónicos (brief §9): personas d
 | US-DSH-02 | Como **Producción** quiero ver el OEE (Disponibilidad × Rendimiento × Calidad) con la fórmula canónica para medir la eficiencia real. | Producción | Must | MVP | ✅ |
 | US-DSH-03 | Como **Producción** quiero ver el scrap rate en tiempo real para reaccionar en el turno. | Producción | Must | MVP | ✅ |
 | US-DSH-04 | Como **Supervisor** quiero un tablero por línea/turno para monitorear mi área. | Supervisor | Should | MVP | ✅ |
+| US-DSH-07 | Como **Supervisor** quiero visualizar en el tablero el **progreso, los tiempos muertos y el cuello de botella** de mis ejecuciones activas para actuar dentro del turno. | Supervisor | Must | MVP | ✅ |
+| US-DSH-08 | Como **Producción** quiero que el tablero muestre los **KPIs correctos según el perfil** (OEE/scrap para repetitivo; % de avance, desvío e hitos para proyecto) para no comparar peras con manzanas. | Producción | Should | V1 | |
 | US-DSH-05 | Como **Gerencia** quiero comparativas y tendencias (cohortes, históricos) para análisis avanzado. | Gerencia | Must | V2 | |
-| US-DSH-06 | Como **Gerencia** quiero un gemelo digital de la línea que refleje su estado real para simular y optimizar. | Gerencia | Should | Enterprise | |
+| US-DSH-06 | Como **Gerencia** quiero **simular escenarios sobre el gemelo digital** de la línea (que ya refleja su estado real desde el MVP) para optimizar antes de decidir. | Gerencia | Should | Enterprise | |
 
 ---
 
@@ -358,16 +370,111 @@ Los **roles** usados en las historias son los canónicos (brief §9): personas d
 
 ---
 
+## E21 · Digital Twin (Capa 1)
+
+**Objetivo de la épica:** representación viva y consultable de la planta —Empresa → Planta → Sector → Línea → Centro de trabajo/Máquina— con **cada sensor/señal ligado a un activo**, su estado en vivo y sus formularios de captura. Es la capa base: ningún dato "flota". Ver [digital-twin.md](../specs/digital-twin.md).
+
+| ID | User story | Rol | MoSCoW | Fase | MVP |
+|---|---|---|---|---|---|
+| US-TWIN-01 | Como **Administrador del tenant** quiero modelar la jerarquía física de mi empresa (planta, sector, línea, centro de trabajo/máquina) para representar mi planta en el sistema. | Administrador | Must | MVP | ✅ |
+| US-TWIN-02 | Como **Integraciones** quiero **ligar cada señal/sensor a un activo** para que ningún dato quede sin dueño físico y pueda atribuirse a tareas y métricas. | Integraciones | Must | MVP | ✅ |
+| US-TWIN-03 | Como **Administrador del tenant** quiero definir atributos y capacidades de cada activo (capacidad, unidad, tiempo de ciclo ideal) para contextualizar sus KPIs. | Administrador | Must | MVP | ✅ |
+| US-TWIN-04 | Como **Supervisor** quiero navegar el gemelo digital y ver el **estado en vivo** de cada activo para saber qué está pasando sin recorrer la planta. | Supervisor | Should | MVP | ✅ |
+| US-TWIN-05 | Como **Operario** quiero un **formulario de captura** asociado al activo donde trabajo para ingresar datos sin buscar dónde cargarlos. | Operario | Must | MVP | ✅ |
+| US-TWIN-06 | Como **Mantenimiento** quiero registrar la calibración y la ubicación de un sensor para confiar en sus lecturas. | Mantenimiento | Should | V1 | |
+| US-TWIN-07 | Como **Calidad** quiero asociar una cámara a un activo y capturar snapshots como evidencia para documentar lo que pasó. | Calidad | Could | V1 | |
+| US-TWIN-08 | Como **Producción** quiero simular escenarios sobre el gemelo digital (qué pasa si cambio la asignación) para optimizar antes de decidir. | Producción | Should | Enterprise | |
+
+---
+
+## E22 · Work Model / Procesos (Capa 2)
+
+**Objetivo de la épica:** modelar **cómo se hace el trabajo** con plantillas versionadas: Procesos, Tareas (grafo DAG), Insumos, roles responsables y tiempos estándar. Una producción repetitiva y un proyecto único **se modelan igual**: cambia el **perfil**, no el modelo. Ver [work-model.md](../specs/work-model.md).
+
+| ID | User story | Rol | MoSCoW | Fase | MVP |
+|---|---|---|---|---|---|
+| US-WM-01 | Como **Producción** quiero definir un **Proceso** (plantilla de trabajo) con su nombre, perfil y versión para estandarizar cómo se hace el trabajo. | Producción | Must | MVP | ✅ |
+| US-WM-02 | Como **Producción** quiero descomponer un Proceso en **Tareas** con duración estimada/estándar y rol responsable para saber quién hace qué y en cuánto tiempo. | Producción | Must | MVP | ✅ |
+| US-WM-03 | Como **Producción** quiero declarar los **Insumos** que consume cada tarea (cantidad y unidad) para conocer el consumo esperado. | Producción | Must | MVP | ✅ |
+| US-WM-04 | Como **Producción** quiero definir **precedencias entre tareas** para expresar el orden real del trabajo (secuencia y paralelismo). | Producción | Must | MVP | ✅ |
+| US-WM-05 | Como **Calidad** quiero marcar **evidencia requerida** y un punto de control de calidad en una tarea para que no se cierre sin la prueba correspondiente. | Calidad | Should | MVP | ✅ |
+| US-WM-06 | Como **Producción** quiero **versionar** un Proceso y publicar versiones para mejorar el método sin alterar el historial. | Producción | Should | MVP | ✅ |
+| US-WM-07 | Como **Producción** quiero marcar el **perfil** del Proceso (repetitivo o proyecto) para que el sistema aplique el disparador y los KPIs correctos. | Producción | Must | MVP | ✅ |
+| US-WM-08 | Como **Producción** quiero editar el **grafo de tareas (DAG) en forma visual** para modelar procesos complejos con convergencias y paralelismo. | Producción | Should | V1 | |
+| US-WM-09 | Como **Producción** quiero definir el **criterio de terminación** de cada tarea para que "hecho" signifique lo mismo para todos. | Producción | Should | V1 | |
+| US-WM-10 | Como **Administrador del tenant** quiero reutilizar y clonar Procesos entre plantas para no rehacer el modelado en cada sitio. | Administrador | Could | V2 | |
+
+---
+
+## E23 · Execution / Ejecución (Capa 3)
+
+**Objetivo de la épica:** instanciar un Proceso y **ejecutarlo**: Ejecución (Run) en su sabor **Lote** o **Proyecto**, con tareas instanciadas, asignación, estados, consumo real, avance y evidencia. Ver [execution.md](../specs/execution.md).
+
+| ID | User story | Rol | MoSCoW | Fase | MVP |
+|---|---|---|---|---|---|
+| US-EXE-01 | Como **Supervisor** quiero lanzar una **Ejecución** a partir de un Proceso (disparada por una orden, un plan o el stock) para poner el trabajo en marcha. | Supervisor | Must | MVP | ✅ |
+| US-EXE-02 | Como **plataforma** quiero **instanciar las tareas** del Proceso al crear la Ejecución para que cada una tenga estado, responsable y tiempos propios. | Supervisor | Must | MVP | ✅ |
+| US-EXE-03 | Como **Supervisor** quiero **asignar responsables** a las tareas de una Ejecución para que cada operario sepa qué le toca. | Supervisor | Must | MVP | ✅ |
+| US-EXE-04 | Como **Operario** quiero **iniciar y terminar una tarea** desde la tablet, adjuntando la evidencia requerida, para reportar mi avance en el momento. | Operario | Must | MVP | ✅ |
+| US-EXE-05 | Como **Operario** quiero registrar el **consumo real de insumos** de una tarea para reflejar lo que realmente se usó. | Operario | Should | MVP | ✅ |
+| US-EXE-06 | Como **Supervisor** quiero ver el **ciclo de vida y el estado** de una Ejecución (planificada, en curso, pausada, cerrada) para gobernar el trabajo en piso. | Supervisor | Must | MVP | ✅ |
+| US-EXE-07 | Como **Supervisor** quiero **cerrar una Ejecución** (total o parcialmente) dejando registro del motivo para reflejar lo que efectivamente se completó. | Supervisor | Must | MVP | ✅ |
+| US-EXE-08 | Como **Producción** quiero lanzar una Ejecución de perfil **Proyecto** con entregable único, fecha objetivo e **hitos** para gestionar trabajo a medida. | Producción | Must | V1 | |
+| US-EXE-09 | Como **Supervisor** quiero **reprogramar** tareas y ejecuciones (mover fechas, reasignar) para responder a los imprevistos del turno. | Supervisor | Should | V1 | |
+| US-EXE-10 | Como **plataforma** quiero que cada Ejecución quede **atada a la versión del Proceso** con la que arrancó para preservar la coherencia histórica. | Producción | Should | MVP | ✅ |
+| US-EXE-11 | Como **Producción** quiero que el sistema **sugiera la reprogramación** ante un desvío detectado para reaccionar antes de perder la fecha. | Producción | Could | Enterprise | |
+
+---
+
+## E24 · Event Engine / Motor de eventos (Capa 4)
+
+**Objetivo de la épica:** observar las tres capas inferiores y **derivar el dato de verdad**. Define el contrato del evento (**fecha, origen, valor, evidencia** + atribución) y calcula **progreso, cuellos de botella y tiempos muertos**. No duplica ingesta ([data-ingestion.md](../specs/data-ingestion.md)), almacenamiento ([traceability.md](../specs/traceability.md)), automatizaciones ([rules-engine.md](../specs/rules-engine.md)) ni visualización ([dashboards.md](../specs/dashboards.md)). Ver [event-engine.md](../specs/event-engine.md).
+
+| ID | User story | Rol | MoSCoW | Fase | MVP |
+|---|---|---|---|---|---|
+| US-EVT-01 | Como **plataforma** quiero que **todo** genere eventos (sensor, cámara, operario, sistema) con fecha, origen, valor y evidencia para tener una única unidad de verdad. | Producción | Must | MVP | ✅ |
+| US-EVT-02 | Como **plataforma** quiero **atribuir cada evento** a su activo, tarea y ejecución para poder derivar métricas por recurso y por trabajo. | Producción | Must | MVP | ✅ |
+| US-EVT-03 | Como **Supervisor** quiero ver el **progreso** de una Ejecución calculado como tareas completadas **ponderadas** para saber el avance real y no un conteo engañoso. | Supervisor | Must | MVP | ✅ |
+| US-EVT-04 | Como **Producción** quiero identificar el **cuello de botella** (recurso o tarea con mayor cola/espera acumulada) para saber dónde intervenir. | Producción | Must | MVP | ✅ |
+| US-EVT-05 | Como **Producción** quiero detectar **tiempos muertos** (intervalos sin eventos productivos dentro de la ventana planificada) para recuperar capacidad perdida. | Producción | Must | MVP | ✅ |
+| US-EVT-06 | Como **Calidad** quiero adjuntar **evidencia** (foto, archivo, lectura, firma) a un evento y consultarla después para sostener la trazabilidad. | Calidad | Should | MVP | ✅ |
+| US-EVT-07 | Como **Gerencia** quiero medir la **productividad por recurso** y el **costo real vs. estimado** de una ejecución para gestionar por datos. | Gerencia | Should | V1 | |
+| US-EVT-08 | Como **Producción** quiero que las métricas derivadas se recalculen ante eventos tardíos (store-and-forward) sin romper la coherencia histórica. | Producción | Should | V1 | |
+| US-EVT-09 | Como **Gerencia** quiero que el motor **anticipe** desvíos de progreso y cuellos de botella a partir del histórico para actuar antes de que ocurran. | Gerencia | Could | Enterprise | |
+
+---
+
+## E25 · Master Data
+
+**Objetivo de la épica:** catálogos propios que permiten operar **sin ERP** (modo *standalone*) y que se **sincronizan** cuando hay ERP (modo *conectado*). Es la consecuencia obligatoria del ERP opcional y el mayor sobrecosto del MVP. Ver [master-data.md](../specs/master-data.md).
+
+| ID | User story | Rol | MoSCoW | Fase | MVP |
+|---|---|---|---|---|---|
+| US-MD-01 | Como **Administrador del tenant** quiero administrar mi catálogo de **productos/ítems** dentro de Nexo para operar sin depender de un ERP. | Administrador | Must | MVP | ✅ |
+| US-MD-02 | Como **Administrador del tenant** quiero administrar **insumos** y **unidades de medida** (con factores de conversión) para modelar consumos correctamente. | Administrador | Must | MVP | ✅ |
+| US-MD-03 | Como **Administrador del tenant** quiero administrar **personas y roles** de planta para asignar responsables a tareas sin sincronizar con nada externo. | Administrador | Must | MVP | ✅ |
+| US-MD-04 | Como **Administrador del tenant** quiero **importar catálogos por CSV/Excel** para cargar mis datos maestros el primer día sin tipear todo. | Administrador | Must | MVP | ✅ |
+| US-MD-05 | Como **Administrador del tenant** quiero declarar el **modo de operación** de mi empresa (*standalone* o *conectado*) para saber qué catálogos edito acá y cuáles llegan del ERP. | Administrador | Must | MVP | ✅ |
+| US-MD-06 | Como **plataforma** quiero cargar un **seed idempotente y versionado** de catálogos por defecto (motivos, roles, unidades, turnos) para que el tenant opere desde el alta. | Administrador | Must | MVP | ✅ |
+| US-MD-07 | Como **Administrador del tenant** quiero administrar **clientes y pedidos** para disparar ejecuciones de perfil proyecto sin ERP. | Administrador | Should | V1 | |
+| US-MD-08 | Como **Gerencia** quiero administrar **centros de costo** para imputar el costo real de las ejecuciones. | Gerencia | Should | V1 | |
+| US-MD-09 | Como **Integraciones** quiero que, al conectar un ERP, una **conciliación asistida** enlace mis catálogos locales con los del ERP (sin duplicar ni borrar) para migrar de standalone a conectado sin perder datos. | Integraciones | Must | V1 | |
+| US-MD-10 | Como **Integraciones** quiero configurar la **fuente de verdad por entidad** (Nexo o ERP) para resolver quién manda sobre cada catálogo. | Integraciones | Should | V1 | |
+
+---
+
 ## 2. Resumen del alcance MVP (historias marcadas ✅)
 
-El MVP queda cubierto por las historias ✅ de las épicas **E1 Identity & Access, E2 Tenant Provisioning, E3 Administration & Licensing, E5 Observability (mínima), E6 Ingestion/Edge Gateway, E7 Devices, E8 Production, E9 Quality, E10 Scrap, E11 Downtime, E12 Traceability (base), E13 Connectors (Odoo), E16 Dashboards, E18 Files/Media (básico) y E19 Audit (básico)**. En conjunto realizan el alcance canónico del MVP (brief §4) y los criterios de salida de la fase MVP del [roadmap](./roadmap.md) §2.5, probados por los [hitos](./milestones.md) M-MVP-01 a M-MVP-16.
+El MVP queda cubierto por las historias ✅ de las épicas **E1 Identity & Access, E2 Tenant Provisioning, E3 Administration & Licensing, E5 Observability (mínima), E6 Ingestion/Edge Gateway, E7 Devices, E8 Production, E9 Quality, E10 Scrap, E11 Downtime, E12 Traceability (base), E13 Connectors (Odoo, **opcional**), E16 Dashboards, E18 Files/Media (básico), E19 Audit (básico)** y las **cinco épicas del modelo por capas: E21 Digital Twin, E22 Work Model, E23 Execution, E24 Event Engine y E25 Master Data**. En conjunto realizan el alcance canónico del MVP (brief §4 + modelo por capas del 2026-07-13) y los criterios de salida de la fase MVP del [roadmap](./roadmap.md) §2.5, probados por los [hitos](./milestones.md) M-MVP-01 a M-MVP-16 (que requieren revisión para incorporar las capas nuevas).
 
 | Fase | Épicas con historias | Foco |
 |---|---|---|
-| **MVP** ✅ | E1, E2, E3, E5, E6, E7, E8, E9, E10, E11, E12, E13, E16, E18, E19 | Captura + tiempo real + Odoo + multi-tenant |
-| **V1** | E5, E6, E7, E9, E10, E12, E14, E15, E16, E17, E18, E19 | Reglas, notificaciones, protocolos, trazabilidad, reportes, RBAC |
-| **V2** | E3, E4, E13, E16, E19, E6 | Marketplace, multi-ERP, analytics, feature flags, DBs distribuidas |
-| **Enterprise** | E3, E4, E7, E9, E11, E13, E16, E17, E18, E20 | IA/visión, predictivo, gemelo digital, energía, SLAs, multi-región |
+| **MVP** ✅ | E1, E2, E3, E5, E6, E7, E8, E9, E10, E11, E12, E13*, E16, E18, E19, **E21, E22, E23, E24, E25** | 4 capas mínimas + master data propia + captura + tiempo real + multi-tenant (*Odoo opcional) |
+| **V1** | E5, E6, E7, E9, E10, E12, E14, E15, E16, E17, E18, E19, **E21, E22, E23, E24, E25** | Reglas, notificaciones, protocolos, trazabilidad, reportes, RBAC, **perfil proyecto, DAG visual, master data completa y conciliación con ERP** |
+| **V2** | E3, E4, E6, E13, E16, E19, **E22** | Marketplace, multi-ERP, analytics, feature flags, DBs distribuidas, reutilización de procesos entre plantas |
+| **Enterprise** | E3, E4, E7, E9, E11, E13, E16, E17, E18, E20, **E21, E23, E24** | IA/visión, predictivo, simulación sobre el gemelo digital, energía, SLAs, multi-región |
+
+**Prioridad relativa dentro del MVP (orden de dependencia de capas):** **E25 Master Data** y **E21 Digital Twin** habilitan **E22 Work Model**, que habilita **E23 Execution**, que alimenta **E24 Event Engine**, que alimenta **E16 Dashboards**. Ninguna de ellas depende de **E13 Connectors**.
 
 ---
 
@@ -377,7 +484,12 @@ El MVP queda cubierto por las historias ✅ de las épicas **E1 Identity & Acces
 2. **Granularidad de "plataforma" como rol.** Varias historias tienen a "plataforma" como sujeto (comportamiento del sistema); ¿se modelan como historias técnicas/enablers o se reescriben desde un rol humano responsable?
 3. **Historias de UX de operario.** ¿Cuánto detalle de la experiencia de tablet (offline, mínimos toques, guantes) se desglosa en historias propias vs. criterios de aceptación? Coordinar con [ui-ux.md](../specs/ui-ux.md).
 4. **Captura de lote/serie en MVP (US-TRC-04).** Marcada ✅ como Should: ¿entra realmente al MVP para habilitar la genealogía de V1 sin backfill, o se pospone?
-5. ✅ **Resuelto (2026-07-11):** el conector Odoo del MVP (US-INT-01/02) hace *pull* de MO/Producto/UoM/Motivos y *push* de producción real (avance/cierre de MO) y scrap (agregado por cierre de corrida); calidad opcional — ver [tablero de decisiones](../open-questions-board.md).
+5. ♻️ **Resuelto (2026-07-11), reencuadrado (2026-07-13):** el conector Odoo del MVP (US-INT-01/02) hace *pull* de MO/Producto/UoM/Motivos y *push* de producción real (avance/cierre de MO) y scrap (agregado por cierre de corrida); calidad opcional. **Esas historias bajan a `Should` y aplican solo al modo conectado** — ver [tablero de decisiones](../open-questions-board.md).
 6. **Roles globales en historias.** ¿Falta detallar historias del Implementador (onboarding de clientes) más allá del alta técnica de tenant?
 7. **Criterios de aceptación por historia.** Este backlog fija prioridad y fase; los criterios de aceptación detallados por historia se elaborarán junto con [milestones.md](./milestones.md) y los documentos de dominio.
 8. **Definición de "Done".** ¿Qué exige la definición de terminado transversal (observabilidad, aislamiento, pruebas) para considerar una historia cerrada en cada fase?
+9. **Recorte del MVP por el peso de E25 Master Data.** Las diez historias de master data no son gratis: ¿todas las ✅ entran al MVP o se recorta al mínimo duro (US-MD-01 a US-MD-06) y el resto pasa a V1? Depende de **MOD-17** del [tablero](../open-questions-board.md).
+10. **Perfil proyecto en el MVP (E23).** US-EXE-08 está en V1, pero si el piloto es de perfil proyecto habría que adelantarla junto con hitos y cronograma. Ver **PRD-16**.
+11. **Solapamiento E8 Production ↔ E22/E23.** La Orden de producción pasa a ser un **disparador** de una Ejecución: ¿algunas historias de E8 (US-PROD-01/03/06) se reescriben como historias de E22/E23 o conviven como la vista de dominio del perfil repetitivo?
+12. **Solapamiento E24 Event Engine ↔ E12/E16.** El motor de eventos define el contrato y las métricas; el Event Store persiste y Dashboards visualiza. ¿La frontera queda clara en las historias o hay que fusionar alguna?
+13. **Solapamiento E21 Digital Twin ↔ E7 Devices.** El hardware se modela en E7 y el gemelo (jerarquía + binding señal↔activo) en E21: ¿US-DEV-03 se retira por quedar cubierta por US-TWIN-02?

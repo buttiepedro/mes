@@ -32,7 +32,7 @@ builder.Services.AddProductionInfrastructure();
 // --- Messaging: MassTransit control bus + Kafka rider with the domain producers ---
 // NOTE: publication is via the transactional outbox (platform.outbox_messages, written in
 // ProductionDbContext.SaveChanges). Wiring the outbox relay/drainer to these producers is a TODO
-// (MassTransit EF outbox or a hosted relay — see design/02-event-model.md §5.1 / DT-EV-02).
+// (MassTransit EF outbox or a hosted relay — see docs/design/02-event-model.md §5.1 / DT-EV-02).
 builder.Services.AddMassTransit(x =>
 {
     x.SetKebabCaseEndpointNameFormatter();

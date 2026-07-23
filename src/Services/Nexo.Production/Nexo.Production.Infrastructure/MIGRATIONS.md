@@ -37,4 +37,4 @@ dotnet ef database update -s ../Nexo.Production.Api
   **`platform`** schema. Both schemas must exist in the tenant database (the local docker-compose
   init SQL seeds `nexo_tenant_demo`).
 - In production, migrations are applied per tenant during provisioning (see
-  `design/01-multi-tenancy-connection.md`), not at API startup.
+  `docs/design/01-multi-tenancy-connection.md`), not at API startup.

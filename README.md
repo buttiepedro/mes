@@ -11,15 +11,15 @@ inicial** del backend.
 
 | Carpeta | Qué es |
 |---|---|
-| [`specs/`](./specs/README.md) | Documentación **funcional** (producto, dominios, UX, roadmap) |
-| [`design/`](./design/README.md) | **Diseño técnico** del MVP (baseline, multi-tenancy, eventos, esquema, contratos, edge, Odoo, seguridad, ops) |
+| [`docs/specs/`](./docs/specs/README.md) | Documentación **funcional** (producto, dominios, UX, roadmap) |
+| [`docs/design/`](./docs/design/README.md) | **Diseño técnico** del MVP (baseline, multi-tenancy, eventos, esquema, contratos, edge, Odoo, seguridad, ops) |
 | `src/` | Código .NET (monorepo): `BuildingBlocks/`, `ControlPlane/`, `Services/`, `Gateways/` |
 | `tests/` | Pruebas |
 | `deploy/` | Infra local y despliegue |
 | `docker-compose.yml` | Entorno local de pruebas |
 
-> **Decisiones vivas:** [`specs/open-questions-board.md`](./specs/open-questions-board.md) ·
-> **Stack y ADRs:** [`design/00-tech-baseline.md`](./design/00-tech-baseline.md)
+> **Decisiones vivas:** [`docs/specs/open-questions-board.md`](./docs/specs/open-questions-board.md) ·
+> **Stack y ADRs:** [`docs/design/00-tech-baseline.md`](./docs/design/00-tech-baseline.md)
 
 ## Estado del scaffolding
 
@@ -82,6 +82,6 @@ docker compose --profile app up -d --build
 - .NET 8, **Clean Architecture + CQRS (MediatR)** por servicio, **Central Package Management**
   ([`Directory.Packages.props`](./Directory.Packages.props)).
 - Multi-tenant: `ITenantContext` + resolución de conexión por tenant (local: por configuración;
-  prod: Tenant Connection Registry sobre Neon — ver [`design/01`](./design/01-multi-tenancy-connection.md)).
-- Eventos: envelope canónico + catálogo único ([`design/02`](./design/02-event-model.md)); constantes en
+  prod: Tenant Connection Registry sobre Neon — ver [`docs/design/01`](./docs/design/01-multi-tenancy-connection.md)).
+- Eventos: envelope canónico + catálogo único ([`docs/design/02`](./docs/design/02-event-model.md)); constantes en
   `Nexo.BuildingBlocks.Messaging.EventTypes`.

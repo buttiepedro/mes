@@ -1,14 +1,16 @@
 # Dispositivos (Devices)
 
-> **Documento:** `specs/specs/devices.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-11
+> **Documento:** `specs/specs/devices.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-13
 > **Roles:** Product Manager · Software Architect · UX Designer
-> **Relacionados:** [data-ingestion.md](./data-ingestion.md) · [integrations.md](./integrations.md) · [security.md](./security.md) · [architecture.md](./architecture.md) · [data-model.md](./data-model.md) · [scalability.md](./scalability.md) · [glossary.md](./glossary.md)
+> **Relacionados:** [digital-twin.md](./digital-twin.md) · [layered-architecture.md](./layered-architecture.md) · [data-ingestion.md](./data-ingestion.md) · [integrations.md](./integrations.md) · [security.md](./security.md) · [architecture.md](./architecture.md) · [data-model.md](./data-model.md) · [scalability.md](./scalability.md) · [glossary.md](./glossary.md)
 
 ## Resumen ejecutivo
 
 El dominio **Devices** es el catálogo vivo del hardware de captura que Nexo administra dentro de cada planta: PLCs Siemens S7 y de otros fabricantes, sensores, gateways, microcontroladores (ESP32/Arduino) y microcomputadores (Raspberry Pi), cámaras IP/USB, dataloggers y balanzas. Su misión es responder, en cualquier momento, tres preguntas de negocio: **qué dispositivos existen** en una empresa, **qué están midiendo** (sus sensores y señales/tags) y **en qué estado de salud y conexión** se encuentran. Es un **servicio por tenant** (opera siempre contra la base de datos del tenant resuelto, ver [architecture.md](./architecture.md) y sección 6 del brief de fundamentos) y constituye la fuente autoritativa del **contexto físico** que luego enriquece cada Evento canónico durante la ingesta.
 
 Devices NO transporta las lecturas de alta frecuencia ni ejecuta el pipeline de eventos —eso es responsabilidad de **Ingestion / Edge Gateway** (ver [data-ingestion.md](./data-ingestion.md))— sino que **modela, aprovisiona, versiona y monitorea** el parque de dispositivos y, sobre todo, define el **mapeo de tags a señales de negocio** que convierte una variable cruda (por ejemplo `DB10.DBW4`) en un concepto comprensible (por ejemplo "Contador de piezas de la Línea 3"). Esta separación de responsabilidades es la que permite escalar a **cientos de miles de dispositivos** y **millones de eventos diarios** sin acoplar el modelo de negocio a los detalles de cada protocolo industrial.
+
+En el **modelo conceptual de 4 capas** (ver [architecture.md](./architecture.md) §1.6 y [layered-architecture.md](./layered-architecture.md)), Devices **alimenta la Capa 1 — Física / Gemelo digital de la planta**: es el documento del **hardware**. El **modelo del gemelo** propiamente dicho —la jerarquía viva Empresa → Planta → Sector → Línea → **Activo**, el estado en vivo del activo, sus capacidades y cómo se navega en la UI— vive en [digital-twin.md](./digital-twin.md). De esa frontera se desprende la **regla no negociable** que gobierna este documento: **cada sensor y cada señal deben estar ligados a un Activo**. Un dato nunca "flota": siempre tiene dueño físico, y eso es lo que permite atribuir eventos a tareas y ejecuciones y calcular métricas por recurso.
 
 Este documento define la taxonomía de dispositivos, el modelo conceptual **Dispositivo ↔ Sensor ↔ Señal/Tag**, los protocolos soportados (S7, OPC UA, Modbus, MQTT, HTTP), el ciclo de aprovisionamiento/onboarding, el diagnóstico de salud y estado de conexión, la gestión de firmware/OTA, el mapeo semántico de tags y la relación con el **Agente Edge / Gateway** on-premise. Todo se describe a nivel de **conceptos de negocio y arquitectura**, sin implementación concreta.
 
@@ -19,13 +21,31 @@ Este documento define la taxonomía de dispositivos, el modelo conceptual **Disp
 | Aspecto | Definición |
 |---|---|
 | **Bounded Context** | **Devices** (lista canónica 5.1 del brief) |
+| **Capa conceptual** | **Capa 1 — Física / Gemelo digital**: Devices aporta el **hardware** de la capa. El modelo del gemelo (jerarquía, estado en vivo, navegación) es de [digital-twin.md](./digital-twin.md) |
 | **Ámbito de datos** | **Por tenant** — persiste en la DB del tenant resuelto |
-| **Qué posee (owns)** | Dispositivos, Sensores, Señales/Tags, mapeos de tag→señal, estado de salud/conexión, inventario de firmware, historial de aprovisionamiento |
-| **Qué NO posee** | El transporte de lecturas en tiempo real y la normalización a Evento canónico (→ [data-ingestion.md](./data-ingestion.md)); la sincronización con ERPs (→ [integrations.md](./integrations.md)); las credenciales/secretos (→ [security.md](./security.md)) |
-| **Consumidores principales** | Ingestion (resuelve contexto de un Evento), Dashboards/Analytics (inventario y salud), Rules Engine (alertas por dispositivo caído), Observability del Control Plane (estado agregado de conectividad) |
+| **Qué posee (owns)** | Dispositivos, Sensores, Señales/Tags, **binding señal→Activo**, mapeos de tag→señal de negocio, estado de salud/conexión, inventario de firmware, historial de aprovisionamiento |
+| **Qué NO posee** | El **modelo del gemelo digital** —jerarquía Empresa→Planta→Sector→Línea→Activo, estado en vivo del activo, capacidades, representación y navegación en la UI— (→ [digital-twin.md](./digital-twin.md)); el transporte de lecturas en tiempo real y la normalización a Evento canónico (→ [data-ingestion.md](./data-ingestion.md)); la sincronización con ERPs (→ [integrations.md](./integrations.md)); las credenciales/secretos (→ [security.md](./security.md)) |
+| **Consumidores principales** | Digital Twin (compone el estado del Activo), Ingestion (resuelve contexto de un Evento), Dashboards/Analytics (inventario y salud), Rules Engine (alertas por dispositivo caído), Observability del Control Plane (estado agregado de conectividad) |
 | **Interfaz de entrada** | UI de administración de planta + API interna (sync) + eventos de estado emitidos por el Agente Edge (async) |
 
 **Principio rector (edge-first, brief §5.4):** los PLC/OPC UA/Modbus viven **on-premise**. El **Agente Edge / Gateway** en planta es quien conversa con el hardware y publica hacia la nube en modo *outbound* con *store-and-forward*. El servicio **Devices** en la nube es el **registro y plano de control** de ese parque; el Agente Edge es el **plano de datos** en el borde. Ambos se sincronizan mediante eventos.
+
+### 1.1 Frontera con el Gemelo digital (Capa 1)
+
+Devices y [digital-twin.md](./digital-twin.md) describen la misma capa desde dos ángulos y **no deben duplicarse**. La regla es simple: **el hardware es de Devices; el modelo de la planta es del gemelo.**
+
+| Tema | Devices (este documento) | Digital Twin ([digital-twin.md](./digital-twin.md)) |
+|---|---|---|
+| Catálogo de hardware (PLC, sensor, cámara, balanza, gateway) | ✅ tipo, fabricante, protocolo, firmware | referencia |
+| Jerarquía Empresa → Planta → Sector → Línea → **Activo** | referencia (la usa para ubicar dispositivos) | ✅ definición y gobierno |
+| **Binding sensor/señal ↔ Activo** | ✅ se **declara y valida** acá (dato del dispositivo) | ✅ se **consume** acá para componer el estado del Activo |
+| Estado de conexión y salud del **dispositivo** | ✅ | referencia |
+| **Estado en vivo del Activo** (en marcha, detenido, en mantenimiento) y sus capacidades | ❌ | ✅ |
+| Mapeo tag → **señal de negocio** | ✅ autoría y versionado | consume la señal ya semántica |
+| Formularios de captura del operario (fuente manual de la capa) | ❌ | ✅ |
+| Cámaras: registro del dispositivo | ✅ | el frame como evidencia del Activo: ✅ allá |
+
+> **Terminología (canónica):** **formulario de captura** = pantalla donde el operario **ingresa** datos (Capa 1). **Tablero / dashboard** = visualización de **KPIs** (sale de la Capa 4, ver [dashboards.md](./dashboards.md)). Nunca llamar "dashboard" a una pantalla de carga.
 
 ---
 
@@ -53,7 +73,7 @@ Nexo cubre un espectro heterogéneo de hardware. Para modelarlo de forma uniform
 - **Tipo de dispositivo:** PLC | Sensor | Gateway | Microcontrolador | Microcomputador | Cámara | Datalogger | Balanza | Otro.
 - **Fabricante / Modelo / Versión de hardware.**
 - **Modo de conectividad:** *directo a la nube* (MQTT/HTTP) o *mediado por Agente Edge* (S7/OPC UA/Modbus). Ver §3 y §9.
-- **Ubicación jerárquica:** referencia a **Planta (Site) → Sector/Área → Línea → Centro de trabajo/Máquina (Asset)** (entidades canónicas 8). Un dispositivo puede estar asignado a una máquina, a una línea o a la planta.
+- **Ubicación jerárquica:** referencia a **Planta (Site) → Sector/Área → Línea → Centro de trabajo/Máquina (Activo/Asset)** (entidades canónicas 8). Un dispositivo puede estar **instalado** en una máquina, en una línea o en la planta —eso describe *dónde está el hardware*—; en cambio, **cada una de sus señales declara a qué `Activo` pertenece el dato** (ver §4.3). Instalación y propiedad del dato pueden no coincidir: un gateway de sector lee cuatro máquinas y cada señal se atribuye a la suya.
 - **Criticidad:** baja | media | alta — gobierna umbrales de alerta y prioridad de soporte.
 - **Estado de ciclo de vida:** ver §5 (aprovisionamiento).
 
@@ -81,9 +101,9 @@ Los protocolos definen **cómo se lee la señal** en el borde. Nexo los soporta 
 
 El corazón del dominio es una jerarquía de tres niveles que separa el **objeto físico** (Dispositivo), el **punto de medición** (Sensor) y la **variable concreta** (Señal/Tag), y que finalmente produce **Lecturas** que se normalizan en **Eventos**.
 
-- **Dispositivo (Device):** el hardware físico de captura. Tiene identidad, tipo, protocolo, ubicación y estado de salud.
-- **Sensor:** un punto de medición asociado a un dispositivo (y, por contexto, a una máquina). Un dispositivo puede exponer **muchos sensores** (p. ej. un datalogger con 8 canales; un PLC que representa varias variables físicas de la máquina).
-- **Señal / Tag:** la variable leída concreta y su **direccionamiento por protocolo** (el `NodeId`, el `DBx.DByy`, el registro Modbus, el *topic* MQTT). Es el **puente técnico** entre el mundo del protocolo y el mundo del negocio.
+- **Dispositivo (Device):** el hardware físico de captura. Tiene identidad, tipo, protocolo, ubicación de instalación y estado de salud.
+- **Sensor:** un punto de medición asociado a un dispositivo y **ligado a un `Activo`** (dueño del dato). Un dispositivo puede exponer **muchos sensores** (p. ej. un datalogger con 8 canales; un PLC que representa varias variables físicas de la máquina), y esos sensores pueden pertenecer a **Activos distintos**.
+- **Señal / Tag:** la variable leída concreta y su **direccionamiento por protocolo** (el `NodeId`, el `DBx.DByy`, el registro Modbus, el *topic* MQTT). Es el **puente técnico** entre el mundo del protocolo y el mundo del negocio, y **siempre declara su `Activo`** (§4.3).
 - **Lectura (Reading):** una muestra puntual (valor + timestamp + calidad) de una señal. Alto volumen; su transporte lo maneja Ingestion.
 - **Evento (Event):** la unidad normalizada canónica (brief §8.1). Una o varias lecturas, combinadas con el **contexto** que aporta Devices (site/line/asset, device_id), se convierten en Eventos de tipo `reading`, `production`, `machine_event`, etc.
 
@@ -106,10 +126,12 @@ erDiagram
     AREA ||--o{ LINE : contiene
     LINE ||--o{ ASSET : contiene
     ASSET ||--o{ DEVICE : "tiene instalados"
-    SITE ||--o{ DEVICE : "puede alojar (no ligados a máquina)"
+    SITE ||--o{ DEVICE : "puede alojar (instalación a nivel planta/sector)"
 
     DEVICE ||--o{ SENSOR : expone
     SENSOR ||--o{ SIGNAL_TAG : "produce (señal/tag)"
+    ASSET ||--o{ SENSOR : "ES DUEÑO DE (binding obligatorio)"
+    ASSET ||--o{ SIGNAL_TAG : "ATRIBUYE EL DATO (binding obligatorio)"
     SIGNAL_TAG ||--o{ READING : "genera lecturas"
     READING }o--|| EVENT : "se normaliza en"
 
@@ -134,12 +156,14 @@ erDiagram
         string tipo_medicion
         string unidad
         string canal
+        string activo_dueno_ref
     }
     SIGNAL_TAG {
         string tag_id
         string direccion_protocolo
         string tipo_dato
         string frecuencia_muestreo
+        string activo_dueno_ref
     }
     BUSINESS_SIGNAL_MAP {
         string nombre_negocio
@@ -155,7 +179,23 @@ erDiagram
     }
 ```
 
-> El diagrama es **conceptual** (entidades de negocio, no tablas SQL). Las entidades `SITE/AREA/LINE/ASSET`, `SENSOR`, `SIGNAL_TAG`, `READING` y `EVENT` corresponden 1:1 a las **entidades canónicas** del brief §8. Ver [data-model.md](./data-model.md) para el modelo completo.
+> El diagrama es **conceptual** (entidades de negocio, no tablas SQL). Las entidades `SITE/AREA/LINE/ASSET`, `SENSOR`, `SIGNAL_TAG`, `READING` y `EVENT` corresponden 1:1 a las **entidades canónicas** del brief §8. Ver [data-model.md](./data-model.md) para el modelo completo y [digital-twin.md](./digital-twin.md) para el modelo del gemelo.
+
+### 4.3 Regla no negociable: toda señal tiene un Activo dueño
+
+**Cada sensor y cada señal/tag debe estar ligado a un `Activo`** (Centro de trabajo / Máquina). Es la regla estructural de la Capa 1 y la condición de posibilidad de todo lo que viene después.
+
+| Aspecto | Definición |
+|---|---|
+| **Qué exige** | Toda `Señal/Tag` declara un **Activo dueño**, además del `Dispositivo` que la expone. Todo `Sensor` declara el suyo. |
+| **Por qué** | Sin dueño físico, un evento **no se puede atribuir** a una `Tarea ejecutada` ni a una `Ejecución`, y no hay forma de calcular **productividad por recurso**, **cuellos de botella** ni **tiempos muertos** de ese recurso. |
+| **Instalación ≠ propiedad** | El `Dispositivo` puede estar instalado a nivel de planta/sector (gateway, datalogger multicanal, PC industrial): eso no exime del binding **por señal**. |
+| **Mediciones sin máquina** | Temperatura ambiente, consumo eléctrico general, presión de aire comprimido: se declara un **Activo de infraestructura** (sala, servicio, utility) que las posea. Nunca quedan huérfanas. |
+| **Cuándo se declara** | En el onboarding, paso 4 (definición de sensores y tags); se valida antes de pasar a **EnPrueba** (§5.2). |
+| **Si falta** | El dato **se admite** (no se pierde) pero entra marcado como **no contextualizado**: no enruta a dominio ni alimenta métricas por recurso hasta que un humano lo mapee (ver [data-ingestion.md](./data-ingestion.md) §4). |
+| **Si cambia** | Re-vincular una señal a otro Activo es un cambio **versionado y auditado**, porque altera la interpretación histórica del dato (ver §8.3 y Preguntas abiertas). |
+
+> Consecuencia práctica en la UI: no se puede **activar** un dispositivo cuyas señales no tengan Activo asignado. La validación es parte del onboarding, no un chequeo posterior.
 
 ---
 
@@ -187,10 +227,10 @@ stateDiagram-v2
 |---|---|---|---|
 | 1. **Registro** | Alta del dispositivo en el catálogo del tenant (manual en UI, importación masiva CSV/Excel o descubrimiento). Se declara tipo, fabricante/modelo y protocolo. | Implementador / Integraciones | Devices |
 | 2. **Emisión de identidad y credenciales** | Se genera una identidad única del dispositivo y sus credenciales (certificado/clave/token según protocolo). Los secretos se custodian fuera del dominio. | Devices + [security.md](./security.md) | Aislamiento por tenant |
-| 3. **Vinculación física** | Se asigna a **Planta → Sector → Línea → Máquina** y al **Agente Edge** que lo va a leer (o se marca como *directo a la nube*). | Implementador | §1, §9 |
-| 4. **Definición de sensores y tags** | Se declaran los sensores y sus señales/tags técnicas con su direccionamiento por protocolo. | Integraciones | §4 |
+| 3. **Vinculación física** | Se declara **dónde está instalado** (Planta → Sector → Línea → Máquina) y a qué **Agente Edge** responde (o se marca como *directo a la nube*). | Implementador | §1, §9 |
+| 4. **Definición de sensores y tags** | Se declaran los sensores y sus señales/tags técnicas con su direccionamiento por protocolo **y el `Activo` dueño de cada señal (obligatorio)**. | Integraciones | §4, **§4.3** |
 | 5. **Mapeo a señales de negocio** | Cada tag se mapea a una señal de negocio con unidad, semántica y transformación. | Integraciones + Producción/Calidad | §8 |
-| 6. **Validación / EnPrueba** | El Agente Edge lee, se comparan lecturas contra valores esperados, se verifica calidad y frecuencia. | Integraciones | §7 |
+| 6. **Validación / EnPrueba** | El Agente Edge lee, se comparan lecturas contra valores esperados, se verifica calidad y frecuencia, **y se valida que ninguna señal quede sin Activo**. | Integraciones | §7, §4.3 |
 | 7. **Activación** | El dispositivo pasa a **Activo**; sus Eventos entran al pipeline productivo y a dashboards/reglas. | Devices | §6, [data-ingestion.md](./data-ingestion.md) |
 
 ### 5.3 Estrategias de onboarding
@@ -246,6 +286,7 @@ Es la función más **diferencial** del dominio y el punto donde Nexo agrega val
 | Elemento del mapeo | Descripción | Ejemplo |
 |---|---|---|
 | **Tag técnico origen** | Direccionamiento por protocolo | `DB10.DBW4` (S7) |
+| **Activo dueño (obligatorio)** | A qué recurso físico se atribuye el dato (§4.3) | Prensa P-07 de la Línea 3 |
 | **Señal de negocio destino** | Nombre y semántica de negocio | "Piezas producidas OK — L3" |
 | **Tipo de señal** | Contador acumulativo, estado discreto, medida analógica, evento discreto, texto | Contador acumulativo |
 | **Unidad** | Unidad de negocio | piezas |
@@ -380,6 +421,7 @@ Devices es una superficie sensible: administra identidades de hardware que emite
 
 | Dominio | Interacción | Documento |
 |---|---|---|
+| **Digital Twin (Capa 1)** | Consume el catálogo y el **binding señal↔Activo** para componer el estado en vivo del Activo y la navegación del gemelo; acá vive el hardware, allá el modelo de la planta (ver §1.1) | [digital-twin.md](./digital-twin.md) |
 | **Ingestion / Edge Gateway** | Consume el catálogo y los mapeos para normalizar lecturas a Eventos; comparte el Agente Edge | [data-ingestion.md](./data-ingestion.md) |
 | **Connectors / Integrations** | El contexto físico (device/asset) enriquece Eventos que luego se sincronizan al ERP; ambos planos desacoplados | [integrations.md](./integrations.md) |
 | **Security** | Identidad de dispositivo, secretos, aislamiento, OTA firmada | [security.md](./security.md) |
@@ -401,3 +443,6 @@ Devices es una superficie sensible: administra identidades de hardware que emite
 6. **Plantillas de dispositivo compartidas:** ¿las plantillas (zero-touch) se comparten vía **Marketplace** entre tenants/partners, o son estrictamente privadas por tenant? (Coordinar con [integrations.md](./integrations.md) y [control-plane.md](./control-plane.md).)
 7. **Versionado de mapeos e histórico:** al cambiar un mapeo tag→señal, ¿se reinterpretan Eventos históricos o se preserva la interpretación vigente al momento de la captura? Definir política de inmutabilidad frente a corrección.
 8. **Redundancia de Agente Edge:** ¿se soporta más de un Agente por planta (alta disponibilidad) y cómo se evita el doble conteo cuando dos Agentes leen el mismo dispositivo?
+9. **Activos de infraestructura (§4.3):** para señales que no pertenecen a una máquina productiva (ambiente, energía general, aire comprimido), ¿se crea un `Activo` de infraestructura o se admite excepcionalmente el binding a `Línea`/`Planta`? Impacta la regla "ningún dato flota" y el cálculo de métricas por recurso (coordinar con [digital-twin.md](./digital-twin.md)).
+10. **Señales compartidas entre Activos:** una misma medición que afecta a varias máquinas (p. ej. un horno que alimenta dos líneas), ¿se replica por Activo, se declara un Activo padre o se admite un binding múltiple con reglas de reparto?
+11. **Cambio de binding señal↔Activo:** al re-vincular una señal a otro Activo, ¿se reinterpretan los eventos históricos o se preserva la atribución vigente al momento de la captura? (misma política que el versionado de mapeos, pregunta 7).

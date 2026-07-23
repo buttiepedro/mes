@@ -1,8 +1,8 @@
 # Ingesta y Normalización de Datos
 
-> **Documento:** `specs/specs/data-ingestion.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-11
+> **Documento:** `specs/specs/data-ingestion.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-13
 > **Roles:** Product Manager · Software Architect · UX Designer
-> **Relacionados:** [architecture.md](./architecture.md) · [devices.md](./devices.md) · [traceability.md](./traceability.md) · [integrations.md](./integrations.md) · [scalability.md](./scalability.md) · [glossary.md](./glossary.md)
+> **Relacionados:** [event-engine.md](./event-engine.md) · [layered-architecture.md](./layered-architecture.md) · [digital-twin.md](./digital-twin.md) · [execution.md](./execution.md) · [architecture.md](./architecture.md) · [devices.md](./devices.md) · [traceability.md](./traceability.md) · [integrations.md](./integrations.md) · [scalability.md](./scalability.md) · [glossary.md](./glossary.md)
 
 ## Resumen ejecutivo
 
@@ -12,7 +12,9 @@ El pipeline arranca en el **borde**: un **Agente Edge / Gateway** on-premise eje
 
 El diseño asume un régimen de carga exigente (millones de eventos/día, picos abruptos, conectividad intermitente) y se apoya en cuatro pilares: **absorción de picos y backpressure** (colas/broker y buffering), **garantías de entrega at-least-once con idempotencia** (para no perder ni duplicar), **gestión rigurosa de orden, timestamps y calidad del dato**, y **capacidad de reprocesamiento** para reconstruir estado o corregir errores sin perder el historial inmutable.
 
-Este documento describe el pipeline extremo a extremo, sus etapas, sus garantías y sus modos de falla, sirviendo de contrato funcional entre el edge, el servicio de ingesta y los dominios consumidores. La gestión del hardware que produce los datos está en [devices.md](./devices.md); la persistencia inmutable y la genealogía en [traceability.md](./traceability.md); la salida hacia el ERP en [integrations.md](./integrations.md).
+En el **modelo conceptual de 4 capas** (ver [architecture.md](./architecture.md) §1.6 y [layered-architecture.md](./layered-architecture.md)), este documento especifica **el pipeline de la Capa 4 — Motor de eventos**: la maquinaria que **trae, normaliza, valida y enruta** los hechos. No especifica la capa completa. El **contrato del evento canónico** y las **métricas derivadas** (progreso, cuellos de botella, tiempos muertos, productividad por recurso, costo real) viven en [event-engine.md](./event-engine.md). Dicho de forma corta: **acá se define cómo llega el hecho; allá, qué significa el hecho y qué se calcula con él.**
+
+Este documento describe el pipeline extremo a extremo, sus etapas, sus garantías y sus modos de falla, sirviendo de contrato funcional entre el edge, el servicio de ingesta y los dominios consumidores. La gestión del hardware que produce los datos está en [devices.md](./devices.md); el modelo del gemelo digital que da contexto físico (activos, binding sensor↔activo) en [digital-twin.md](./digital-twin.md); la persistencia inmutable y la genealogía en [traceability.md](./traceability.md); la salida hacia el ERP —**conector lateral opcional**— en [integrations.md](./integrations.md).
 
 ---
 
@@ -87,6 +89,28 @@ flowchart TB
 
 > `type=reading` de alta frecuencia se persiste en **time-series** además de (o en lugar de) generar eventos de dominio, según la configuración de la señal; ver sección 6 y [scalability.md](./scalability.md).
 
+### 1.2 Rol en el modelo por capas y frontera con el Motor de eventos
+
+La ingesta es **el pipeline de entrada de la Capa 4**. Todo lo que ocurre en las capas inferiores —un sensor que mide (Capa 1), un operario que marca una tarea como terminada (Capa 3), el sistema mismo— entra por acá y sale convertido en **Evento canónico**. La frontera con [event-engine.md](./event-engine.md) se declara explícitamente para **no duplicar** contenido entre ambos documentos:
+
+| Responsabilidad | Vive en `data-ingestion.md` (este doc) | Vive en `event-engine.md` |
+|---|---|---|
+| Adapters de protocolo, captura y tagging en el borde | ✅ | ❌ |
+| Store-and-forward, backpressure, picos, reintentos | ✅ | ❌ |
+| Normalización a Evento canónico (cómo se completa cada campo) | ✅ | ❌ |
+| Validación, calidad del dato, cuarentena/dead-letter | ✅ | ❌ |
+| Deduplicación e idempotencia extremo a extremo | ✅ | ❌ |
+| Enrutamiento a dominios y persistencia diferenciada | ✅ | ❌ |
+| **Contrato semántico del evento** (qué significa cada atributo, incluida la evidencia) | referencia | ✅ (definición) |
+| **Métricas derivadas** (progreso, cuellos de botella, tiempos muertos, productividad, costo real) | ❌ | ✅ |
+| Atribución del evento a `Activo` / `Tarea ejecutada` / `Ejecución` | resuelve el contexto disponible en la captura | ✅ (define la regla de atribución) |
+| Historial inmutable y genealogía | ❌ → [traceability.md](./traceability.md) | referencia |
+| Automatizaciones y alertas sobre eventos | ❌ → [rules-engine.md](./rules-engine.md) | referencia |
+| Visualización de métricas | ❌ → [dashboards.md](./dashboards.md) | referencia |
+
+- **Regla práctica:** si la pregunta es *"¿cómo llega el dato y con qué garantías?"*, la respuesta está acá. Si es *"¿qué es un evento, a qué se atribuye y qué se calcula con él?"*, está en [event-engine.md](./event-engine.md).
+- **Contexto físico obligatorio:** la ingesta resuelve el `Activo` de cada señal usando el binding **sensor/señal ↔ Activo** de la Capa 1 (regla no negociable, ver [digital-twin.md](./digital-twin.md) y [devices.md](./devices.md)). Un dato sin Activo resoluble entra marcado como **no contextualizado** (sección 4) y no alimenta métricas por recurso hasta que se mapee.
+
 ---
 
 ## 2. Fuentes y adapters de protocolo
@@ -119,11 +143,13 @@ Todas las fuentes convergen en el **Evento canónico** (sección 8.1 del brief),
 | `event_id` | Se asigna un identificador único al admitir el evento (si el origen no lo trae) |
 | `tenant_id` | Resuelto en la admisión (subdominio/host o claim del token); nunca lo define el payload |
 | `timestamp` | Preferentemente el **tiempo de origen** del hecho; si falta, el tiempo de captura del agente; se registra también el tiempo de ingesta (ver sección 8) |
-| `source` | device / manual / api / file, según el adapter |
+| `source` | device / manual / api / file, según el adapter (**origen**) |
 | `device_id?` | Del mapeo de tagging (si aplica) |
-| `site / line / asset` | Del contexto del dispositivo/operario |
+| `site / line / asset` | Del contexto del dispositivo/operario. **`asset` es obligatorio cuando el hecho es físico**: se resuelve por el binding señal↔Activo |
+| `task_run_id? / run_id?` | Referencia a la **`Tarea ejecutada`** y/o a la **`Ejecución`** cuando el hecho es atribuible al trabajo (típico en captura manual y en señales de un Activo con tarea en curso) |
 | `type` | production \| scrap \| quality \| downtime \| reading \| machine_event \| custom |
-| `payload` | Contenido normalizado según `type` (unidades, escalas y códigos ya convertidos) |
+| `payload` | Contenido normalizado según `type` (unidades, escalas y códigos ya convertidos) — el **valor** del hecho |
+| **`evidencia?`** | **Referencia(s) a la prueba del hecho: foto, archivo, lectura de sensor, firma, frame de cámara.** El binario se sube a **Files / Media** y el evento guarda la **referencia + metadatos** (tipo, autor, marca temporal, checksum); el evento **nunca transporta el binario** |
 | `operator_id?` | Para eventos manuales/operados |
 | `shift?` | Turno resuelto por contexto temporal/planta |
 | `origin_metadata` | Protocolo, firmware, **calidad del dato** (p. ej. status OPC UA), agente de origen |
@@ -132,6 +158,17 @@ Todas las fuentes convergen en el **Evento canónico** (sección 8.1 del brief),
 - **Normalización distribuida:** el agente realiza normalización **parcial** (conversión de escalas/unidades, tagging) para reducir carga en la nube; el servicio Ingestion consolida la **normalización canónica final** y garantiza el contrato.
 - **Inmutabilidad:** una vez normalizado e ingerido, el evento no se modifica. Las correcciones se modelan como **nuevos eventos** (compensatorios o de anexo), preservando la trazabilidad (ver [traceability.md](./traceability.md)).
 - **Versionado de esquema:** el Evento canónico evoluciona con compatibilidad hacia atrás; productores (adapters) y consumidores (dominios) evolucionan de forma independiente bajo gobierno de esquema (ver [architecture.md](./architecture.md)).
+- **Atribución al trabajo:** cuando el contexto lo permite (formulario de captura de una tarea, o señal de un `Activo` con una `Tarea ejecutada` en curso), la ingesta completa la referencia a `Tarea ejecutada`/`Ejecución`. La **regla de atribución** —qué hacer ante ambigüedad o solapamiento de tareas en un mismo Activo— la define [event-engine.md](./event-engine.md); acá solo se resuelve con el contexto disponible.
+
+### 3.1 Evidencia dentro del evento normalizado
+
+La **evidencia** es parte del evento canónico, no un anexo posterior (su definición semántica y su obligatoriedad por tarea se especifican en [event-engine.md](./event-engine.md) y [work-model.md](./work-model.md)). Para la ingesta, esto implica reglas concretas:
+
+- **Separación binario / metadato:** el archivo viaja por el canal de **Files / Media** (upload directo, resumible, con storage aislado por tenant) y el evento porta **solo la referencia**. Así el pipeline de eventos no se degrada por payloads pesados.
+- **Captura offline:** una foto tomada por un operario sin conectividad se retiene en el buffer local junto al evento; al reconectar se sube primero el binario y luego se confirma el evento, manteniendo la misma `dedup_key` (sin duplicar ni la evidencia ni el hecho).
+- **Evidencia como lectura de sensor:** cuando la prueba del hecho es un valor medido (peso de balanza, temperatura al momento del control), la evidencia se resuelve por **referencia al evento/serie temporal** de esa señal, sin generar un archivo.
+- **Evidencia faltante:** si la `Tarea` exige evidencia obligatoria y el evento llega sin ella, el evento **se admite** (nunca se pierde el hecho) pero se marca como *incompleto*; la política de bloqueo del cierre de la tarea es de la Capa 3 (ver [execution.md](./execution.md)), no del pipeline.
+- **Trazabilidad:** la referencia de evidencia es inmutable como el resto del evento y forma parte de la cadena de trazabilidad (ver [traceability.md](./traceability.md)).
 
 ---
 
@@ -152,7 +189,8 @@ Antes de enrutar, cada evento atraviesa una validación en capas. Lo que no supe
 | Válido y de buena calidad | Continúa a deduplicación y enrutamiento |
 | Válido con marca de calidad (sospechoso) | Continúa, pero etiquetado; visible en dashboards/reportes con su calidad |
 | Inválido (esquema/contexto) | Cuarentena (dead-letter) con motivo; alerta a Observability |
-| No contextualizado (sin tag/dispositivo) | Admitido y marcado para mapeo manual; no enruta a dominio hasta resolverse |
+| No contextualizado (sin tag/dispositivo **o sin `Activo` resoluble**) | Admitido y marcado para mapeo manual; no enruta a dominio ni alimenta métricas por recurso hasta resolverse |
+| Sin evidencia cuando la tarea la exige | Admitido y marcado como *incompleto*; la Capa 3 decide si eso bloquea el cierre de la tarea (ver [execution.md](./execution.md)) |
 
 ---
 
@@ -196,7 +234,8 @@ Antes de enrutar, cada evento atraviesa una validación en capas. Lo que no supe
   - Eventos de dominio → estado transaccional en la **DB del tenant** (por dominio).
   - `reading` de alta frecuencia → **time-series** (append-only, con *downsampling* y retención; ver [scalability.md](./scalability.md)).
   - Read models de Dashboards/Reports se materializan consumiendo el flujo (CQRS).
-- **Salida al ERP:** los dominios (o Traceability) producen los hechos que **Connectors/Integrations** sincroniza con el ERP vía ACL (ver [integrations.md](./integrations.md)). La ingesta no habla directamente con el ERP.
+- **Salida al ERP:** los dominios (o Traceability) producen los hechos que **Connectors/Integrations** sincroniza con el ERP vía ACL (ver [integrations.md](./integrations.md)). La ingesta no habla directamente con el ERP, **y el ERP es opcional**: sin conector, el flujo termina en los dominios, la trazabilidad y los tableros, sin degradación funcional.
+- **Frontera con las métricas:** el enrutamiento entrega **hechos**, no indicadores. El cálculo de **progreso, cuellos de botella, tiempos muertos, productividad por recurso y costo real** ocurre en la Capa 4 según lo definido en [event-engine.md](./event-engine.md); su visualización, en [dashboards.md](./dashboards.md). La ingesta no calcula KPIs ni los persiste.
 
 ---
 
@@ -287,6 +326,10 @@ El pipeline soporta **reprocesar** eventos para corregir errores de normalizaci�
 
 ## 11. Referencias cruzadas
 
+- **Capa 4 · contrato del evento y métricas derivadas:** [event-engine.md](./event-engine.md)
+- Modelo por capas (documento ancla): [layered-architecture.md](./layered-architecture.md)
+- Capa 1 · gemelo digital, binding sensor↔Activo y formularios de captura: [digital-twin.md](./digital-twin.md)
+- Capa 3 · ejecuciones y tareas a las que se atribuyen los eventos: [execution.md](./execution.md)
 - Inventario, salud y OTA de dispositivos/agentes: [devices.md](./devices.md)
 - Historial inmutable, genealogía y Event Store: [traceability.md](./traceability.md)
 - Sincronización con ERPs (Odoo) y ACL: [integrations.md](./integrations.md)
@@ -304,3 +347,5 @@ El pipeline soporta **reprocesar** eventos para corregir errores de normalizaci�
 5. **Retención del log de eventos para reproceso:** ¿cuánto tiempo se conserva el flujo en el broker/Event Store para permitir reconstrucción de read models y auditoría?
 6. **Manejo de `reading` de alta frecuencia:** ¿qué señales generan eventos de dominio y cuáles solo alimentan time-series? ¿Umbrales/agregaciones configurables por tag?
 7. **Gobernanza de adapters de terceros:** ¿qué requisitos de calidad/seguridad debe cumplir un adapter publicado en Marketplace para entrar al pipeline de captura?
+8. **Límites de la evidencia:** ¿qué tamaño máximo, formatos y política de retención se admiten para la evidencia adjunta (foto/video/frame), y qué pasa con el buffer del edge cuando un corte prolongado acumula binarios pesados? (cruza con la sección 7.3 y con [event-engine.md](./event-engine.md)).
+9. **Atribución automática evento → tarea:** cuando un `Activo` tiene más de una `Tarea ejecutada` abierta o solapada, ¿con qué criterio la ingesta propone la atribución y cuándo la deja en manos de la Capa 4? ¿Se admite atribución diferida (reproceso) al cerrar la tarea?

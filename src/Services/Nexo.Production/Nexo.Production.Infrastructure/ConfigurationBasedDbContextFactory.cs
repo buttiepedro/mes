@@ -11,7 +11,7 @@ namespace Nexo.Production.Infrastructure;
 /// <remarks>
 /// Scoped: read at DbContext options build time per request (see <see cref="DependencyInjection"/>).
 /// The productive resolver based on the Tenant Connection Registry / Neon is a TODO
-/// (see design/01-multi-tenancy-connection.md).
+/// (see docs/design/01-multi-tenancy-connection.md).
 /// </remarks>
 public sealed class ConfigurationBasedDbContextFactory
 {

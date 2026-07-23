@@ -1,16 +1,18 @@
-# Producción
+# Producción (perfil repetitivo del modelo de trabajo)
 
-> **Documento:** `specs/specs/production.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-11
+> **Documento:** `specs/specs/production.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-13
 > **Roles:** Product Manager · Software Architect · UX Designer
-> **Relacionados:** [architecture.md](./architecture.md) · [glossary.md](./glossary.md) · [quality.md](./quality.md) · [scrap.md](./scrap.md) · [downtime.md](./downtime.md) · [traceability.md](./traceability.md) · [data-ingestion.md](./data-ingestion.md) · [dashboards.md](./dashboards.md) · [rules-engine.md](./rules-engine.md) · [integrations.md](./integrations.md) · [devices.md](./devices.md) · [data-model.md](./data-model.md)
+> **Relacionados:** [layered-architecture.md](./layered-architecture.md) · [work-model.md](./work-model.md) · [execution.md](./execution.md) · [event-engine.md](./event-engine.md) · [architecture.md](./architecture.md) · [glossary.md](./glossary.md) · [quality.md](./quality.md) · [scrap.md](./scrap.md) · [downtime.md](./downtime.md) · [traceability.md](./traceability.md) · [data-ingestion.md](./data-ingestion.md) · [dashboards.md](./dashboards.md) · [rules-engine.md](./rules-engine.md) · [integrations.md](./integrations.md) · [devices.md](./devices.md) · [data-model.md](./data-model.md)
 
 ## Resumen ejecutivo
 
-El dominio de **Producción** es el corazón operativo de Nexo: modela el ciclo de vida de una **Orden de producción (Work Order / MO)**, la ejecución en planta y la captura de **cuánto se produjo, cuándo, con qué máquina, en qué turno y por qué operario**. Es el dominio que convierte la intención de fabricación (planificada en el ERP) en **eventos normalizados** de piezas producidas, buenas y no conformes, alimentando de forma trazable a Calidad, Scrap, Paradas y a los tableros en tiempo real.
+> **Reencuadre (arquitectura por capas).** Producción **ya no es un dominio raíz** de la plataforma: es **el perfil repetitivo del modelo de trabajo**. Lo que este documento describe es un **Proceso** con perfil `repetitivo` ([work-model.md](./work-model.md), Capa 2) que se **ejecuta como Lote** ([execution.md](./execution.md), Capa 3), sobre activos del gemelo digital ([digital-twin.md](./digital-twin.md), Capa 1) y observado por el motor de eventos ([event-engine.md](./event-engine.md), Capa 4). La **Orden de producción deja de ser el concepto central**: pasa a ser **un disparador** de esa ejecución —uno entre varios—. Todo el detalle de dominio de este documento (captura manual/automática, estados, validaciones, casos borde, KPIs y aporte al OEE) **sigue plenamente vigente**: es la especialización repetitiva del modelo general. Ver [layered-architecture.md](./layered-architecture.md).
+
+El **perfil repetitivo** es el corazón operativo de Nexo en manufactura seriada: modela la ejecución en planta de un Proceso que se repite N veces y la captura de **cuánto se produjo, cuándo, con qué máquina, en qué turno y por qué operario**. Es el ámbito que convierte la intención de fabricación —disparada por una **Orden de producción**, por un plan, por demanda o por reposición de stock— en **eventos normalizados** de piezas producidas, buenas y no conformes, alimentando de forma trazable a Calidad, Scrap, Paradas y a los tableros en tiempo real.
 
 Producción resuelve el problema central que da sentido a la plataforma: **eliminar la carga manual y heterogénea de datos de fabricación**. Un mismo registro de producción puede nacer de un operario que toca una tablet o de un **contador de un PLC** que incrementa automáticamente; en ambos casos, el sistema los normaliza al mismo Evento canónico y los contextualiza (orden, máquina, turno, producto). Esta dualidad manual/automático es un requisito de diseño transversal, no una opción.
 
-El dominio es **agnóstico del ERP**: la Orden de producción de Nexo es una entidad propia que **se sincroniza** con la Manufacturing Order (MO) de Odoo mediante el servicio de **Connectors / Integrations** y su Anti-Corruption Layer (ACL). Nexo nunca depende del ERP para operar; si el ERP no está disponible, la planta sigue registrando y la sincronización se resuelve luego (store-and-forward).
+El ámbito es **agnóstico del ERP y no lo requiere**: la Orden de producción de Nexo es una entidad propia que **puede** sincronizarse con la Manufacturing Order (MO) de Odoo mediante el servicio de **Connectors / Integrations** y su Anti-Corruption Layer (ACL), pero el **ERP es opcional** (ver [integrations.md](./integrations.md) §1.1). En **modo standalone** la orden —o directamente el Lote— se crea en Nexo a partir de la master data propia ([master-data.md](./master-data.md)). Nexo nunca depende del ERP para operar; si el ERP no está disponible o no existe, la planta sigue registrando y la sincronización se resuelve luego (store-and-forward) o simplemente no aplica.
 
 Finalmente, Producción es un **contribuyente directo del OEE**. Aporta el **Total de piezas producidas**, las **Piezas buenas** y el **Tiempo operativo** necesarios para el cálculo de **Rendimiento** y **Calidad**, en coherencia con las fórmulas canónicas del brief y con los dominios de [Paradas](./downtime.md) (Disponibilidad), [Calidad](./quality.md) (factor Calidad) y [Scrap](./scrap.md).
 
@@ -20,8 +22,34 @@ Finalmente, Producción es un **contribuyente directo del OEE**. Aporta el **Tot
 
 **Servicio (Bounded Context) responsable:** **Production** (por tenant, opera siempre contra la DB del tenant resuelto).
 
+### Ubicación en el modelo de 4 capas
+
+Producción no introduce conceptos paralelos: **especializa** los conceptos canónicos de las capas para el caso repetitivo. Esta tabla es la clave de lectura del resto del documento.
+
+| Concepto de este documento | Concepto canónico de la capa | Capa | Documento de referencia |
+|---|---|---|---|
+| Ruta / operación / receta de fabricación | **Proceso** (plantilla versionada) con **perfil `repetitivo`** | 2 · Modelo de trabajo | [work-model.md](./work-model.md) |
+| Operación de la ruta | **Tarea** (con precedencias, insumos, evidencia, criterio de terminación) | 2 · Modelo de trabajo | [work-model.md](./work-model.md) |
+| **Corrida de producción (Production Run)** | **Ejecución** en su sabor **Lote (Batch)** | 3 · Ejecución | [execution.md](./execution.md) |
+| **Orden de producción (Work Order / MO)** | **Disparador** de una Ejecución (no es la ejecución ni el proceso) | 3 · Ejecución (entrada) | [execution.md](./execution.md) |
+| Máquina / centro de trabajo / señal de contador | **Activo** y **sensor ligado al activo** | 1 · Física | [digital-twin.md](./digital-twin.md) |
+| Pantalla de carga del operario | **Formulario de captura** (nunca "dashboard") | 1 · Física | [digital-twin.md](./digital-twin.md) |
+| Evento `type=production`, KPIs derivados | **Evento canónico** y **métricas derivadas** | 4 · Motor de eventos | [event-engine.md](./event-engine.md) |
+
+> **Mismo modelo, distinto disparador.** Una producción repetitiva y un proyecto único **se modelan igual** (Proceso → Tarea → Insumo → Ejecución). Lo único que cambia es **el disparador de la ejecución** y **el set de KPIs** ([dashboards.md](./dashboards.md)). Por eso este documento no describe "otro dominio", sino **el perfil repetitivo** del mismo modelo.
+
+**Disparadores de una ejecución repetitiva** (la Orden de producción es solo el primero):
+
+| Disparador | Origen | Modo típico |
+|---|---|---|
+| **Orden de producción / MO** | ERP (pull por conector) o alta manual en Nexo | Conectado o standalone |
+| **Plan de producción** | Planificación interna en Nexo | Standalone o conectado |
+| **Demanda / pedido de cliente** | Master data propia o ERP | Ambos |
+| **Reposición de stock (punto de pedido)** | Regla de negocio / [rules-engine.md](./rules-engine.md) | Ambos |
+| **Alta manual del supervisor** | Supervisor en planta | Ambos |
+
 ### En alcance (MVP)
-- Modelar y ejecutar **Órdenes de producción** sincronizadas con la MO de Odoo.
+- Modelar y ejecutar el **perfil repetitivo**: Proceso repetitivo → Lote, disparado por **Orden de producción** (propia de Nexo, opcionalmente sincronizada con la MO de Odoo) o por cualquier otro disparador de la tabla anterior.
 - Registrar **cantidades producidas** (buenas y no conformes) por orden, máquina, turno y operario.
 - Capturar **tiempos** de ejecución (arranque, pausa, fin, tiempo operativo).
 - Soportar **captura manual** (tablet) y **captura automática vía datalogger/CSV** en el MVP; los **protocolos industriales** (S7/OPC UA/Modbus/MQTT) para captura directa de PLC llegan en **V1** (ver [devices.md](./devices.md)).
@@ -35,6 +63,10 @@ Finalmente, Producción es un **contribuyente directo del OEE**. Aporta el **Tot
 - Cálculo de Disponibilidad y árbol de paradas → [downtime.md](./downtime.md).
 - Genealogía de lote/serie y eventos inmutables → [traceability.md](./traceability.md).
 - Adaptadores de protocolo, normalización y store-and-forward → [data-ingestion.md](./data-ingestion.md).
+- **Definición del Proceso/Tarea/Insumo y el concepto de perfil** → [work-model.md](./work-model.md).
+- **Ciclo de vida genérico de la Ejecución** (común a Lote y Proyecto) y el **perfil proyecto** → [execution.md](./execution.md).
+- **Contrato del evento canónico y métricas derivadas** (progreso, cuellos de botella, tiempos muertos) → [event-engine.md](./event-engine.md).
+- **Catálogos maestros** (productos, insumos, unidades, motivos) cuando no hay ERP → [master-data.md](./master-data.md).
 
 ---
 
@@ -44,7 +76,9 @@ Nombres tomados de las **entidades canónicas (sección 8 del brief)**. Producci
 
 | Entidad canónica | Rol en Producción | Propiedad |
 |---|---|---|
-| **Orden de producción (Work Order / MO)** | Unidad de trabajo a ejecutar; se sincroniza con la MO de Odoo | **Propia** (espejo local con ACL) |
+| **Orden de producción (Work Order / MO)** | **Disparador** de la ejecución: qué producir y cuánto. Propia de Nexo; opcionalmente espejo de la MO del ERP | **Propia** (espejo local con ACL si hay ERP) |
+| **Proceso (perfil `repetitivo`)** | Plantilla versionada de cómo se fabrica (tareas, insumos, tiempos estándar, criterios de calidad) | Referenciada ([work-model.md](./work-model.md)) |
+| **Ejecución — Lote (Batch)** | Instancia viva del Proceso; equivale a la **Corrida de producción** de este documento | Referenciada ([execution.md](./execution.md)) |
 | **Registro de producción (Production Record)** | Cantidad producida en un contexto (orden/máquina/turno/operario) | **Propia** |
 | **Producto / SKU** | Ítem fabricado por la orden | Referenciada (catálogo, sync Odoo) |
 | **Operación / Ruta** | Pasos del proceso; a qué operación corresponde la corrida | Referenciada |
@@ -74,13 +108,19 @@ erDiagram
     SENAL_TAG ||--o{ LECTURA : "genera"
 ```
 
-> **Nota de modelo.** Introducimos el concepto operativo de **Corrida de producción (Production Run)** como el "período de ejecución" de una orden en una máquina/turno determinado. Una orden puede tener varias corridas (por pausas, cambios de turno o de máquina). El **Registro de producción** es el incremento de cantidad dentro de una corrida. Este refinamiento se propone para `data-model.md`; ver [Preguntas abiertas](#preguntas-abiertas).
+> **Nota de modelo.** El concepto operativo de **Corrida de producción (Production Run)** es el "período de ejecución" de una orden en una máquina/turno determinado. Una orden puede tener varias corridas (por pausas, cambios de turno o de máquina). El **Registro de producción** es el incremento de cantidad dentro de una corrida. Este refinamiento se propone para `data-model.md`; ver [Preguntas abiertas](#preguntas-abiertas).
+
+> **Nota de reencuadre.** La **Corrida de producción** es la manifestación repetitiva de la **Ejecución (Run)** de la Capa 3: el mismo esqueleto —estado, tareas instanciadas, consumo real de insumos, avance, evidencia— que usa un **Proyecto**, con el sabor **Lote** (cantidad objetivo, producto, repetible). Lo que aquí se llama "orden → corridas" es, en el lenguaje canónico, "**disparador → Ejecución(es) de un Proceso repetitivo**". Ver [execution.md](./execution.md). El diagrama de abajo mantiene la nomenclatura de dominio por legibilidad operativa; la equivalencia está en §1.
+
+> **Sin ERP.** En modo standalone, `PRODUCTO_SKU` y `OPERACION_RUTA` no vienen del ERP: son entidades de la **master data propia** ([master-data.md](./master-data.md)), y la ruta/operación se expresa como las **Tareas** del Proceso repetitivo ([work-model.md](./work-model.md)).
 
 ---
 
-## 3. Relación con la MO de Odoo (integración ERP)
+## 3. Relación con la MO de Odoo (integración ERP **opcional**)
 
-Nexo **complementa** el ERP; no lo reemplaza. La planificación (qué producir, cuánto, con qué BOM) vive en Odoo; la **ejecución real** vive en Nexo.
+> **El ERP es opcional.** Esta sección describe el **modo conectado**. En **modo standalone** (sin ERP) nada de lo que sigue es necesario: la Orden de producción se crea en Nexo, el producto/SKU y las unidades salen de la **master data propia**, y no hay Sync Job ni mapeo de estados. La capacidad de producir, capturar, trazar y medir **es idéntica en ambos modos**. Ver [integrations.md](./integrations.md) §1.1 y [master-data.md](./master-data.md).
+
+Cuando el ERP existe, Nexo **complementa** el ERP; no lo reemplaza. La planificación (qué producir, cuánto, con qué BOM) vive en Odoo; la **ejecución real** vive **siempre** en Nexo, con o sin ERP.
 
 | Concepto Odoo | Concepto Nexo | Dirección | Notas |
 |---|---|---|---|
@@ -91,7 +131,7 @@ Nexo **complementa** el ERP; no lo reemplaza. La planificación (qué producir, 
 | Cantidad producida real | Total buenas/producidas | **Nexo → Odoo** | Nexo es la fuente de verdad de la ejecución |
 | Consumo/rendimiento | Aporta a costeo | Nexo → Odoo (V1+) | Ver [scrap.md](./scrap.md) para costo del descarte |
 
-**Principio arquitectónico:** toda la conversación con Odoo pasa por el servicio **Connectors / Integrations** y su **ACL**. El dominio Production **no** conoce el modelo de Odoo; solo publica/consume su propio lenguaje ubicuo. Detalle de mapeos, reintentos y **Job de sincronización (Sync Job)** en [integrations.md](./integrations.md).
+**Principio arquitectónico:** toda la conversación con Odoo pasa por el servicio **Connectors / Integrations** y su **ACL**. Production **no** conoce el modelo de Odoo; solo publica/consume su propio lenguaje ubicuo. Corolario del reencuadre: el ERP **puede** aportar el **disparador** (la MO) y el **contexto** (catálogos), pero **nunca** es fuente de verdad del Proceso ni de la Ejecución. Detalle de mapeos, reintentos y **Job de sincronización (Sync Job)** en [integrations.md](./integrations.md).
 
 > **Granularidad del push (INT-01):** el reporte de producción real a Odoo se **agrega por cierre de corrida** (avance/cierre de MO), no por cada evento, para acotar la carga sobre el ERP; el scrap se refleja como `stock.scrap`. El pull de contexto (MO, Producto, UoM, Motivos) y la calidad bidireccional opcional se detallan en [integrations.md](./integrations.md).
 
@@ -119,7 +159,9 @@ sequenceDiagram
 La captura es **dual y equivalente en el modelo de datos**: sea manual o automática, ambas terminan en un **Registro de producción** y un **Evento canónico** `type=production`. Lo que cambia es el `source` y la confianza del dato (`origin_metadata.data_quality`).
 
 ### 4.1 Captura manual (tablet en planta)
-El operario, autenticado y con la orden seleccionada, ingresa cantidades. Pensado para líneas no instrumentadas o como respaldo.
+El operario, autenticado y con la orden seleccionada, ingresa cantidades en un **Formulario de captura**. Pensado para líneas no instrumentadas o como respaldo.
+
+> **Terminología.** La pantalla donde el operario **ingresa** datos se llama **Formulario de captura** y pertenece a la **Capa 1** ([digital-twin.md](./digital-twin.md)); **nunca** se la llama "dashboard". Un **Tablero/Dashboard** es una **visualización de KPIs** y vive en [dashboards.md](./dashboards.md).
 
 - **Persona:** Operario (registra), Supervisor (corrige/valida). Ver [personas](#9-personas-y-permisos).
 - **Momentos de carga:** por evento (cada X piezas/bandeja/pallet), por hora, o al cierre de corrida/turno.
@@ -171,6 +213,8 @@ sequenceDiagram
 
 ## 5. Estados y ciclo de vida
 
+> **Reencuadre.** Lo que sigue es la **especialización repetitiva** del ciclo de vida genérico de la **Ejecución** (Capa 3). Los estados y transiciones descritos aquí son los del par *orden repetitiva → Lote*; el esqueleto común a Lote y Proyecto (creación, asignación de responsables, reprogramación, ejecución parcial, cierre) vive en [execution.md](./execution.md) y **no se duplica**. Los estados **Planificada** y **Sincronizada** solo tienen sentido en **modo conectado**: en standalone, la orden nace **Liberada** (o directamente como Lote) y el cierre no espera confirmación de ningún ERP.
+
 ### 5.1 Diagrama de estados de la Orden de producción
 
 ```mermaid
@@ -208,7 +252,7 @@ stateDiagram-v2
 
 > **Relación con Paradas.** Cuando una orden pasa a **Pausada** por una detención de máquina, se genera un **Downtime Event** en el dominio [Paradas](./downtime.md). Producción y Paradas comparten el reloj de la corrida: el tiempo pausado **no** cuenta como Tiempo operativo y sí resta a la Disponibilidad.
 
-### 5.3 Mapeo de estados con Odoo
+### 5.3 Mapeo de estados con Odoo (solo en modo conectado)
 
 | Estado Nexo | Estado Odoo (`mrp.production`) | Dirección de verdad |
 |---|---|---|
@@ -313,7 +357,9 @@ Roles del brief (sección 9) con su interacción típica en Producción (matriz 
 
 ## 10. KPIs asociados y contribución al OEE
 
-Fórmulas **idénticas** a la sección 10.1 del brief. Producción es dueño de **Rendimiento**, del factor **Calidad** (junto con [Quality](./quality.md)) y aporta insumos a **Disponibilidad** (junto con [Downtime](./downtime.md)).
+Fórmulas **idénticas** a la sección 10.1 del brief —**no cambian**—. Producción es dueño de **Rendimiento**, del factor **Calidad** (junto con [Quality](./quality.md)) y aporta insumos a **Disponibilidad** (junto con [Downtime](./downtime.md)).
+
+> **KPIs por perfil.** Los indicadores de esta sección (**OEE**, scrap rate, takt, tiempo de ciclo, FPY) son los del **perfil repetitivo**. **El OEE no aplica al perfil proyecto**, que se mide con **% de avance, desvío de cronograma, ruta crítica e hitos cumplidos**. Los KPIs **comunes a ambos perfiles** —tiempos muertos, cuellos de botella, productividad por recurso, costo real vs estimado— los deriva el **motor de eventos** ([event-engine.md](./event-engine.md)). Tabla completa por perfil en [dashboards.md](./dashboards.md).
 
 ### 10.1 KPIs propios de Producción
 | KPI | Fórmula | Insumos que aporta Producción |
@@ -369,7 +415,7 @@ Los KPIs se materializan como **read models (CQRS)** y se exponen en [dashboards
 | `quality.disposition` | Consume | de [Quality](./quality.md) para reclasificar buenas/no conformes |
 | `scrap.registered` | Consume | de [Scrap](./scrap.md) para descontar buenas/ajustar total |
 
-Todos los eventos siguen el **Evento canónico** (sección 8.1 del brief): `event_id`, `tenant_id`, `timestamp`, `source`, `type=production`, `payload`, `operator_id?`, `shift?`, `origin_metadata`, `dedup_key`; **inmutables** una vez ingeridos ([traceability.md](./traceability.md)). El **motor de reglas** puede reaccionar (p. ej. alertar si el ritmo cae por debajo del takt). Ver [rules-engine.md](./rules-engine.md).
+Todos los eventos siguen el **Evento canónico** (sección 8.1 del brief): `event_id`, `tenant_id`, `timestamp`, `source`, `type=production`, `payload`, `operator_id?`, `shift?`, `origin_metadata`, `dedup_key`; **inmutables** una vez ingeridos ([traceability.md](./traceability.md)). El contrato completo del evento —incluida la **evidencia** (foto, archivo, lectura, firma, frame de cámara) como atributo de primera clase— y las **métricas derivadas** (progreso, cuellos de botella, tiempos muertos) son responsabilidad de la Capa 4: ver [event-engine.md](./event-engine.md). El **motor de reglas** puede reaccionar (p. ej. alertar si el ritmo cae por debajo del takt). Ver [rules-engine.md](./rules-engine.md).
 
 ---
 
@@ -379,7 +425,7 @@ Todos los eventos siguen el **Evento canónico** (sección 8.1 del brief): `even
 |---|---|---|
 | CB1 | **Reset/rollover del contador PLC** | Detectar caída del valor; no sumar delta negativo; reanudar acumulación desde nuevo cero; registrar evento técnico |
 | CB2 | **Doble conteo** (auto + manual del mismo lote) | Regla de conciliación §4.3; conservar ambos eventos, generar ajuste; alertar |
-| CB3 | **Orden sin sincronizar** (Odoo caído) | Registrar contra orden local/temporal; store-and-forward; conciliar al reconectar ([integrations.md](./integrations.md)) |
+| CB3 | **Orden sin sincronizar** (Odoo caído) | Registrar contra orden local/temporal; store-and-forward; conciliar al reconectar ([integrations.md](./integrations.md)). En modo standalone el caso no existe: la orden **es** local |
 | CB4 | **Producción sin orden activa** (máquina cuenta sin orden) | Encolar como "producción sin asignar"; supervisor la imputa después |
 | CB5 | **Cambio de turno a mitad de corrida** | Cerrar corrida del turno saliente, abrir del entrante; acumulados de orden intactos |
 | CB6 | **Retrabajo que convierte no conforme en buena** | Evento de reclasificación desde Quality; ajustar buenas/no conformes sin duplicar total |
@@ -404,11 +450,14 @@ Todos los eventos siguen el **Evento canónico** (sección 8.1 del brief): `even
 
 ## Preguntas abiertas
 
-1. **Corrida de producción (Production Run):** ¿se formaliza como entidad de primer nivel en `data-model.md` o se modela como atributo/agrupación del Registro de producción? Impacta granularidad de tiempos y KPIs por turno.
+1. **Corrida de producción (Production Run):** con el reencuadre, la Corrida es el **Lote** de la Capa 3 ([execution.md](./execution.md)). ¿Se unifican como una sola entidad **Ejecución** en `data-model.md`, o la Corrida sobrevive como subdivisión de un Lote (por turno/máquina)? Impacta granularidad de tiempos y KPIs por turno.
 2. **Conciliación auto vs manual:** confirmar la regla "automático primario / manual clasificador". ¿Debe ser configurable por tenant/línea, o política global?
 3. **Buenas vs no conformes automáticas:** ¿exigimos dos contadores (OK/NOK) para líneas instrumentadas, o aceptamos total + clasificación posterior por Calidad/Scrap?
 4. **Atribución de operario en captura automática:** ¿operario del turno por defecto, login explícito obligatorio, o ambos según criticidad de la línea?
 5. **Unidades de medida y conversión** (uds vs peso vs longitud): ¿dónde vive la conversión y cómo afecta el cálculo de "piezas" en el Rendimiento para procesos continuos?
 6. **Overproduction:** ¿se bloquea, se alerta, o se permite libremente? ¿Política por tenant?
 7. **Ciclo ideal / takt:** ¿se toma del maestro de Odoo, se define en Nexo, o es un dato editable por planta? Fuente de verdad del `cycle_time` para el Rendimiento.
-8. **Definición de "planificado" para Disponibilidad:** ¿el Tiempo productivo planificado lo determina el calendario de turnos de Nexo o se importa del ERP/planificación?
+8. **Definición de "planificado" para Disponibilidad:** ¿el Tiempo productivo planificado lo determina el calendario de turnos de Nexo o se importa del ERP/planificación? (En modo standalone la respuesta es forzosa: lo determina Nexo.)
+9. **Alcance del MVP por perfil:** ¿el MVP entrega **solo el perfil repetitivo** (este documento) o también el perfil proyecto desde el arranque? Condiciona cuánto del modelo genérico de [work-model.md](./work-model.md)/[execution.md](./execution.md) hay que construir en V1.
+10. **Órdenes sin ERP:** ¿qué mínimo de planificación propia entra al MVP para disparar ejecuciones en modo standalone (alta manual de orden, plan simple, punto de pedido), y dónde vive esa planificación?
+11. **Ruta vs Proceso:** la "Operación / Ruta" de este documento y las **Tareas** del Proceso repetitivo, ¿son la misma entidad ya en V1, o conviven mientras exista sincronización de rutas desde el ERP?

@@ -1,14 +1,16 @@
 # Integraciones y Conectores (Connectors / Integrations)
 
-> **Documento:** `specs/specs/integrations.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-11
+> **Documento:** `specs/specs/integrations.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-13
 > **Roles:** Product Manager · Software Architect · UX Designer
-> **Relacionados:** [architecture.md](./architecture.md) · [control-plane.md](./control-plane.md) · [data-ingestion.md](./data-ingestion.md) · [devices.md](./devices.md) · [security.md](./security.md) · [data-model.md](./data-model.md) · [glossary.md](./glossary.md)
+> **Relacionados:** [layered-architecture.md](./layered-architecture.md) · [master-data.md](./master-data.md) · [architecture.md](./architecture.md) · [control-plane.md](./control-plane.md) · [data-ingestion.md](./data-ingestion.md) · [devices.md](./devices.md) · [security.md](./security.md) · [data-model.md](./data-model.md) · [glossary.md](./glossary.md)
 
 ## Resumen ejecutivo
 
 El dominio **Connectors / Integrations** es la frontera controlada entre el **Core de negocio de Nexo** y el mundo exterior de los sistemas de gestión (ERPs como Odoo, SAP, Dynamics, Oracle) y sistemas/protocolos de terceros (APIs REST, MQTT, OPC UA, Modbus, Webhooks). Su principio fundacional, tomado del brief de fundamentos (§1 y §5.5), es que **el core NUNCA depende de un ERP**: el dominio de Nexo modela producción, scrap, calidad, paradas y trazabilidad en **términos propios y canónicos**, y cada integración se resuelve mediante un **Conector** que actúa como **Anti-Corruption Layer (ACL)**, traduciendo entre el lenguaje del sistema externo y el lenguaje interno de Nexo.
 
-Esta arquitectura basada en conectores es la que hace realidad la promesa de producto: **"la capa única de captura de datos industriales entre tu planta y tu ERP", agnóstica de ERP**. Odoo es el **primer** conector soportado (MVP) y el más detallado en este documento, pero el diseño garantiza que agregar SAP, Dynamics u Oracle sea **sumar un adapter**, no **reescribir el dominio**. El Core no sabe qué ERP hay del otro lado; solo publica y consume Eventos canónicos y conceptos de negocio, y el conector se ocupa de hablar el dialecto del sistema externo.
+Esta arquitectura basada en conectores es la que hace realidad la promesa de producto: Nexo es un **sistema de ejecución y trazabilidad del trabajo en planta** que funciona **por sí solo**, y la integración con el ERP es un **acelerador, no su razón de ser**. Odoo es el **primer** conector soportado y el más detallado en este documento, pero el diseño garantiza que agregar SAP, Dynamics u Oracle sea **sumar un adapter**, no **reescribir el dominio**. El Core no sabe qué ERP hay del otro lado —ni siquiera si hay uno—; solo publica y consume Eventos canónicos y conceptos de negocio, y el conector se ocupa de hablar el dialecto del sistema externo.
+
+> **Cambio de posicionamiento (importante):** el **ERP es OPCIONAL**. La plataforma opera en **modo standalone** (sin ERP, con **master data propia** — ver [master-data.md](./master-data.md)) y el conector ERP es un **"plus"** que acelera la puesta en marcha y elimina doble carga cuando el cliente ya tiene un ERP. El ERP **no es una capa** de la arquitectura: se conecta **lateralmente** a las cuatro capas (ver [layered-architecture.md](./layered-architecture.md)). Los **modos de operación** se detallan en §1.1.
 
 Este documento define: la **anatomía de un conector** y cómo desacopla el Core; el **catálogo de conectores** previstos; el **conector Odoo en detalle** (órdenes de producción/MO, productos, scrap, calidad); los **patrones de sincronización** (push/pull, batch/tiempo real); el **mapeo de datos**; el **manejo de errores, reintentos e idempotencia** con colas; el **monitoreo de sincronización** con estado por conector; y el **Marketplace de conectores** (enlazado a [control-plane.md](./control-plane.md)). Como toda la especificación, se describe a nivel de negocio y arquitectura, **sin implementación concreta**.
 
@@ -25,6 +27,60 @@ Este documento define: la **anatomía de un conector** y cómo desacopla el Core
 | **Se comunica con** | El **backbone de eventos** (async) para reaccionar a Eventos canónicos; los dominios por tenant (sync) para leer/escribir conceptos de negocio; los sistemas externos (ERP/API) a través de cada adapter |
 
 **Encaje con los principios del brief:** este dominio implementa el principio §5.5 **"Core desacoplado del ERP vía Conectores + ACL"** y se apoya en el §5.2 **event-driven** (reacciona a eventos), el §5.3 **multi-tenant DB-per-tenant** (config y jobs por tenant) y el §5.8 **observabilidad** (estado de conectores hacia el Control Plane). Ver [architecture.md](./architecture.md).
+
+### 1.1 El ERP es opcional: modos de operación
+
+Nexo es **autónomo**. Las cuatro capas de la plataforma —Física ([digital-twin.md](./digital-twin.md)), Modelo de trabajo ([work-model.md](./work-model.md)), Ejecución ([execution.md](./execution.md)) y Motor de eventos ([event-engine.md](./event-engine.md))— funcionan **sin ningún sistema externo**. El ERP se conecta **de costado**, como un conector más del catálogo.
+
+```mermaid
+flowchart TB
+    C4["Capa 4 · Motor de eventos"]
+    C3["Capa 3 · Ejecución (Lote | Proyecto)"]
+    C2["Capa 2 · Modelo de trabajo (Procesos)"]
+    C1["Capa 1 · Física (Gemelo digital)"]
+    MD["Master Data propia<br/>(productos, insumos, UoM, procesos, personas...)"]
+    ERP["ERP (Odoo / SAP / Dynamics / Oracle)"]
+    C1 --> C2 --> C3 --> C4
+    MD -.->|"alimenta contexto"| C2
+    ERP <-.->|"CONECTOR OPCIONAL — 'plus'<br/>(sincroniza, no habilita)"| MD
+```
+
+#### Los dos modos
+
+| Aspecto | **Modo standalone** (sin ERP) | **Modo conectado** (con ERP) |
+|---|---|---|
+| **Condición** | El cliente no tiene ERP, o no quiere/puede integrarlo aún | El cliente tiene ERP y habilita el conector desde el Marketplace |
+| **Master data** | **Propia de Nexo**: productos/ítems, insumos, unidades de medida, procesos, personas/roles, clientes y pedidos (opcional), centros de costo. Alta manual, importación CSV o API ([master-data.md](./master-data.md)) | **Sincronizada** desde el ERP por el conector; Nexo mantiene un espejo local con referencia cruzada (`external_ref`) |
+| **Fuente de verdad del contexto** | **Nexo** (es el único sistema que tiene el dato) | **El ERP**, para las entidades que se declaren sincronizadas (típicamente catálogos y pedidos/órdenes) |
+| **Fuente de verdad de la ejecución** | **Nexo, siempre** | **Nexo, siempre** — lo que pasó en planta lo sabe la planta |
+| **Disparador del trabajo** | Creado en Nexo: pedido/demanda cargada, plan interno, reposición de stock, o alta manual de la Ejecución | Puede llegar del ERP (MO, pedido, orden de trabajo) y también crearse en Nexo |
+| **Rol del conector** | No hay conector ERP activo (puede haber Webhooks/REST/MQTT para otros fines) | ACL bidireccional: pull de contexto, push de lo ejecutado (ver §4 y §5) |
+| **Alta del tenant** | Seed de catálogos mínimos + carga inicial guiada | Seed + primera sincronización completa de catálogos |
+| **Qué se pierde/gana** | Autonomía total; a cambio, alguien debe mantener los catálogos en Nexo | Cero doble carga y coherencia con gestión; a cambio, dependencia de disponibilidad y modelo del ERP |
+| **Qué NO cambia** | Captura, procesos, ejecución, eventos, trazabilidad, KPIs y tableros: **idénticos en ambos modos** | Ídem |
+
+#### Fuente de verdad por entidad
+
+La regla es simple y no admite excepción: **el ERP puede ser fuente de verdad del contexto (qué hay que hacer y con qué catálogos); Nexo es siempre fuente de verdad de la ejecución (qué pasó realmente en planta)**.
+
+| Entidad | Standalone | Conectado |
+|---|---|---|
+| Producto / SKU, Insumo, UoM, Motivos | Nexo | **ERP** (Nexo mantiene espejo) |
+| Personas / roles | Nexo ([users-permissions.md](./users-permissions.md)) | Configurable: Nexo o ERP/IdP |
+| Clientes y pedidos | Nexo (opcional) | **ERP** |
+| Proceso (plantilla de trabajo) | **Nexo** ([work-model.md](./work-model.md)) | **Nexo** (el ERP no modela el trabajo de planta a este nivel) |
+| Ejecución (Lote / Proyecto), tareas, tiempos, avance | **Nexo** | **Nexo** |
+| Eventos, evidencia, trazabilidad, KPIs | **Nexo** | **Nexo** |
+| Producción real, scrap, calidad ejecutada | **Nexo** | **Nexo** (se *empuja* al ERP; el ERP la refleja, no la define) |
+
+#### Consecuencias de diseño
+
+- **Master data propia es un requisito, no un plan B.** Sin ERP, la plataforma necesita sus propios catálogos y su UI de gestión. Es el **costo oculto más grande** de este posicionamiento y **agranda el alcance** del producto: hay que decirlo con todas las letras al planificar el roadmap ([master-data.md](./master-data.md)).
+- **Migración entre modos sin ruptura.** Un tenant debe poder arrancar standalone y **conectar el ERP después**: al habilitar el conector se ejecuta una **conciliación inicial** que correlaciona catálogos locales con los del ERP (por código/SKU) y decide, por entidad, quién pasa a ser fuente de verdad. El proceso inverso (desconectar) deja los datos en Nexo, que pasa a ser fuente de verdad de todo.
+- **El conector nunca es un prerrequisito de operación.** Ninguna capacidad de captura, ejecución o tablero puede quedar bloqueada por la ausencia o caída del ERP (ver §5, "la sincronización nunca bloquea la captura").
+- **El modo es configuración del tenant, no una variante de producto.** El mismo despliegue soporta ambos; lo que cambia es qué conectores están habilitados y qué mapeos existen.
+
+> **Reencuadre de INT-01 (decisión a revisar).** La decisión **INT-01** fijaba **Odoo como conector obligatorio del MVP**. Con este posicionamiento, **Odoo pasa a ser opcional**: el **MVP debe funcionar sin ERP**. Lo que se conserva de INT-01 es el **alcance funcional** del conector Odoo cuando el tenant sí lo habilita (pull de contexto, push agregado por cierre de corrida, calidad bidireccional opcional — ver §4). Lo que cambia es su **obligatoriedad** y, en consecuencia, la prioridad relativa frente a la master data propia. Marcada como decisión a revisar en el [tablero de decisiones](../open-questions-board.md).
 
 ---
 
@@ -98,11 +154,11 @@ Todo conector, sin importar el sistema externo, comparte una estructura conceptu
 
 ## 3. Catálogo de conectores
 
-Nexo prevé un catálogo extensible. La disponibilidad sigue el roadmap del brief §11 (Odoo en MVP; multi-ERP en V2).
+Nexo prevé un catálogo extensible. La disponibilidad sigue el roadmap del brief §11 (Odoo como primer conector; multi-ERP en V2). **Ningún conector de esta tabla es obligatorio para operar:** un tenant en modo standalone (§1.1) puede tener cero conectores activos y usar la plataforma completa.
 
 | Conector | Categoría | Dirección típica | Capacidades principales | Fase (brief §11) |
 |---|---|---|---|---|
-| **Odoo** | ERP | Bidireccional | MO/producción, productos/SKU, scrap, calidad, unidades, lotes | **MVP** |
+| **Odoo** | ERP | Bidireccional | MO/producción, productos/SKU, scrap, calidad, unidades, lotes | **MVP (opcional)** |
 | **SAP** | ERP | Bidireccional | Órdenes, materiales, movimientos, calidad | V2 |
 | **Microsoft Dynamics** | ERP | Bidireccional | Órdenes, productos, inventario | V2 |
 | **Oracle** | ERP | Bidireccional | Órdenes, ítems, movimientos | V2 |
@@ -118,9 +174,9 @@ Nexo prevé un catálogo extensible. La disponibilidad sigue el roadmap del brie
 
 ## 4. Conector Odoo (detallado — primer ERP soportado)
 
-Odoo es el conector de referencia del MVP. Su alcance funcional cubre el ciclo que conecta la **producción real de planta** (capturada por Nexo) con la **gestión** (registrada en Odoo), eliminando la carga manual.
+Odoo es el conector de referencia: el primero que se implementa y el patrón que siguen los demás. **No es obligatorio** — todo este apartado describe el **modo conectado** (§1.1); en modo standalone nada de lo que sigue aplica y los catálogos se gestionan en [master-data.md](./master-data.md). Su alcance funcional cubre el ciclo que conecta la **producción real de planta** (capturada por Nexo) con la **gestión** (registrada en Odoo), eliminando la doble carga cuando el ERP existe.
 
-> **Alcance del MVP (INT-01):** el conector Odoo hace **pull** de MO, Producto, UoM y Motivos (contexto de captura) y **push** de la producción real (avance/cierre de MO) y del scrap (`stock.scrap`), con el **push de producción agregado por cierre de corrida** (no por evento). La sincronización de **calidad es bidireccional y opcional** en esta fase.
+> **Alcance del conector (reencuadre de INT-01):** cuando el tenant lo habilita, el conector Odoo hace **pull** de MO, Producto, UoM y Motivos (contexto de captura) y **push** de la producción real (avance/cierre de MO) y del scrap (`stock.scrap`), con el **push de producción agregado por cierre de corrida** (no por evento). La sincronización de **calidad es bidireccional y opcional**. Este alcance sigue vigente; lo que cambia respecto de INT-01 es que **el MVP ya no lo exige**: debe poder entregarse y operarse sin Odoo (ver §1.1).
 
 ### 4.1 Entidades sincronizadas y dirección
 
@@ -313,6 +369,9 @@ flowchart LR
 
 | Dominio | Interacción | Documento |
 |---|---|---|
+| **Master Data** | Dueño de los catálogos propios de la plataforma; en modo conectado, destino/origen de la sincronización de catálogos y quien registra la fuente de verdad por entidad | [master-data.md](./master-data.md) |
+| **Arquitectura por capas** | Ubica al ERP como conector lateral opcional, no como capa | [layered-architecture.md](./layered-architecture.md) |
+| **Modelo de trabajo / Ejecución** | El Proceso y la Ejecución son siempre de Nexo; el ERP solo puede aportar el disparador y el contexto | [work-model.md](./work-model.md) · [execution.md](./execution.md) |
 | **Arquitectura** | Encaje con event-driven, ACL, API Gateway, comunicación sync/async | [architecture.md](./architecture.md) |
 | **Control Plane / Marketplace / Licensing** | Catálogo de conectores, habilitación por plan, estado agregado | [control-plane.md](./control-plane.md) |
 | **Data Ingestion** | Fuente de los Eventos canónicos que disparan sincronizaciones | [data-ingestion.md](./data-ingestion.md) |
@@ -325,7 +384,7 @@ flowchart LR
 
 ## Preguntas abiertas
 
-1. **Fuente de verdad por entidad:** para conceptos que existen en Nexo y en el ERP (p. ej. lotes, motivos), ¿quién es el *system of record* por entidad y por tenant, y cómo se resuelve un conflicto de doble edición?
+1. **Fuente de verdad por entidad:** §1.1 fija la regla general (contexto → ERP si está conectado; ejecución → siempre Nexo), pero para conceptos que existen en ambos lados (p. ej. lotes, motivos), ¿el *system of record* es configurable por entidad y por tenant, y cómo se resuelve un conflicto de doble edición?
 2. **Estrategia frente a cambios de API del ERP:** ¿cómo se gestiona el ciclo de vida de versiones del adapter Odoo (y futuros) cuando el ERP cambia su modelo, sin interrumpir la sincronización de tenants en producción?
 3. **Reconciliación:** ¿con qué frecuencia y granularidad corre la reconciliación, y qué política de resolución automática vs. revisión humana se aplica ante divergencias?
 4. **Multi-ERP simultáneo:** el brief marca multi-ERP avanzado fuera del MVP; ¿qué restricciones se imponen en V1/V2 cuando un tenant activa dos ERPs que compiten por la misma entidad?
@@ -333,3 +392,6 @@ flowchart LR
 6. ✅ **Resuelto (2026-07-11):** el push de producción a Odoo se hace **agregado por cierre de corrida** (avance/cierre de MO), no por cada evento, para acotar la carga sobre el ERP — ver [tablero de decisiones](../open-questions-board.md).
 7. ✅ **Resuelto (2026-07-11):** todas las credenciales de conector se custodian en el gestor de secretos central (Vault/KMS); la configuración guarda solo referencias, con resolución bajo demanda en contexto de tenant y rotación periódica y ante incidente — ver [tablero de decisiones](../open-questions-board.md).
 8. **SLA de sincronización:** ¿qué objetivos de latencia/consistencia se comprometen por plan (brief §11 Enterprise) y cómo se miden y reportan al cliente?
+9. **INT-01 reencuadrada:** con el ERP ya opcional, ¿el conector Odoo sigue entrando en el MVP como diferencial comercial, o se corre a V1 para priorizar la master data propia? (Decisión a revisar en el [tablero](../open-questions-board.md).)
+10. **Conciliación al conectar un ERP tardíamente:** cuando un tenant standalone habilita el ERP meses después, ¿qué política se aplica ante catálogos divergentes (fusión automática por código, revisión humana obligatoria, o congelamiento del catálogo local)? ¿Y qué pasa con las Ejecuciones históricas que apuntan a ítems locales?
+11. **Pricing por modo (COM-01):** ¿el precio cambia si el sistema se vende sin ERP —donde Nexo hace más trabajo, no menos—, y cómo se comunica que el conector es un "plus" y no un componente que se paga aparte?

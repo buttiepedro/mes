@@ -1,8 +1,8 @@
 # Dashboards / Analytics
 
-> **Documento:** `specs/specs/dashboards.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-11
+> **Documento:** `specs/specs/dashboards.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-13
 > **Roles:** Product Manager · Software Architect · UX Designer
-> **Relacionados:** [production.md](./production.md) · [quality.md](./quality.md) · [scrap.md](./scrap.md) · [downtime.md](./downtime.md) · [reports.md](./reports.md) · [rules-engine.md](./rules-engine.md) · [ui-ux.md](./ui-ux.md) · [data-model.md](./data-model.md) · [architecture.md](./architecture.md) · [glossary.md](./glossary.md)
+> **Relacionados:** [event-engine.md](./event-engine.md) · [work-model.md](./work-model.md) · [execution.md](./execution.md) · [digital-twin.md](./digital-twin.md) · [layered-architecture.md](./layered-architecture.md) · [production.md](./production.md) · [quality.md](./quality.md) · [scrap.md](./scrap.md) · [downtime.md](./downtime.md) · [reports.md](./reports.md) · [rules-engine.md](./rules-engine.md) · [ui-ux.md](./ui-ux.md) · [data-model.md](./data-model.md) · [architecture.md](./architecture.md) · [glossary.md](./glossary.md)
 
 ## Resumen ejecutivo
 
@@ -26,6 +26,22 @@ Dashboards es un servicio de **solo lectura**: nunca es fuente de verdad. Las f�
 | Definición de KPIs y su semántica de presentación | Diseño visual base y design system → [ui-ux.md](./ui-ux.md) |
 
 > **Regla de frontera:** un dashboard **muestra** un KPI; una regla **reacciona** a un KPI; un reporte **congela** un KPI en un documento. Los tres consumen los mismos read models, pero no comparten responsabilidad.
+
+### 1.1 Terminología canónica: Tablero ≠ Formulario de captura
+
+Distinción **no negociable** en toda la documentación y en la UI, para evitar una confusión frecuente ("dashboards para que el operario cargue datos"):
+
+| Término | Qué es | Dirección del dato | Capa | Documento |
+|---|---|---|---|---|
+| **Tablero / Dashboard** | **Visualización de KPIs** (números, gauges, series, Pareto, andon) | **Salida**: el usuario **lee** | 4 · Motor de eventos (origen del dato) | **este documento** |
+| **Formulario de captura** | Pantalla donde el operario **ingresa** datos (cantidades, motivos, evidencia, marcar tarea terminada) | **Entrada**: el usuario **escribe** | 1 · Física / Gemelo digital | [digital-twin.md](./digital-twin.md) |
+
+- Un **Formulario de captura NUNCA se llama "dashboard"**, aunque muestre contexto (orden activa, objetivo del turno) junto al campo de carga.
+- Un **Tablero NUNCA escribe**: Dashboards es de solo lectura (§4.4). Si desde una pantalla se puede cargar un dato, esa pantalla es un formulario de captura, no un tablero.
+- Una misma tablet puede alternar entre ambas pantallas; son **componentes distintos, de capas distintas, con dueños distintos**.
+- El **andon** (§8) es un tablero puro: solo lectura, sin interacción.
+
+> Esta distinción también está declarada en [digital-twin.md](./digital-twin.md) y en [glossary.md](./glossary.md). Ante cualquier duda de nomenclatura, prevalece esta tabla.
 
 ---
 
@@ -88,6 +104,35 @@ Un mismo KPI puede agregarse por distintas dimensiones. Dashboards **no recalcul
 | Producto / SKU | Producto | Calidad por producto |
 | Orden de producción (MO) | Work Order | Avance de una orden |
 | Operario | Operario | Productividad por operario (con cuidado ético/gremial) |
+
+### 2.5 KPIs por perfil (repetitivo vs proyecto)
+
+Un mismo modelo de trabajo se ejecuta con **dos perfiles** ([work-model.md](./work-model.md)): **repetitivo** (se ejecuta N veces, como **Lote**) y **proyecto** (se ejecuta una vez, entregable único). **El set de KPIs es una de las dos únicas cosas que cambian entre perfiles** —la otra es el disparador de la ejecución—. Aplicar el indicador equivocado al perfil equivocado es el error de lectura más caro de esta plataforma.
+
+> **Regla canónica: el OEE aplica al perfil REPETITIVO, no a proyectos.** Un proyecto no tiene tiempo de ciclo ideal ni piezas totales; medirlo con OEE produce un número sin significado. Un proyecto se mide por **avance, cronograma y ruta crítica**.
+
+| Perfil | KPIs propios | Por qué son propios de ese perfil |
+|---|---|---|
+| **Repetitivo** (Lote) | **OEE** (Disponibilidad × Rendimiento × Calidad), **scrap rate**, **takt**, **tiempo de ciclo**, **FPY** | Presuponen repetición: un ciclo ideal por pieza, un ritmo de demanda y un universo de piezas sobre el cual calcular tasas |
+| **Proyecto** | **% de avance**, **desvío de cronograma**, **ruta crítica**, **hitos cumplidos**, (futuro) **valor ganado** | Presuponen entregable único y fechas: lo que importa es dónde está respecto del plan, no cuántas unidades por hora |
+| **Comunes (ambos)** | **tiempos muertos**, **cuellos de botella**, **productividad por recurso**, **costo real vs estimado**, **calidad** | Se derivan de eventos y tareas, no de la naturaleza repetitiva del trabajo: valen igual para un lote de ventanas que para una obra a medida |
+
+**Reglas de presentación:**
+
+- **Las fórmulas existentes NO cambian.** OEE, Disponibilidad, Rendimiento, Calidad, FPY, MTBF y MTTR conservan exactamente las definiciones de §2.1 y §2.2 y del glosario. Esta sección **no redefine nada**: solo declara **a qué perfil aplica cada indicador**.
+- **Selección automática por perfil.** Un tablero conoce el perfil de la Ejecución que está mostrando y ofrece por defecto el set correspondiente; los KPIs del otro perfil **no se muestran vacíos ni en cero**, simplemente no aplican (la UI lo indica como "no aplica a este perfil", nunca como 0%).
+- **Agregados mixtos.** Un tenant puede tener ambos perfiles conviviendo. Un tablero de gerencia que agrega planta o empresa **solo puede sumar KPIs comunes** entre perfiles distintos; el OEE agregado se calcula **exclusivamente sobre ejecuciones repetitivas** y así debe rotularse.
+- **Drill-down coherente:** desde un KPI común se baja al detalle del perfil que corresponda (Lote → §7 rutas repetitivas; Proyecto → tareas, hitos y ruta crítica).
+
+**Origen del dato:** los KPIs **comunes** —**progreso/avance, cuellos de botella, tiempos muertos**, productividad por recurso y costo real— **no los calcula Dashboards ni los dominios clásicos**: son **métricas derivadas del motor de eventos** ([event-engine.md](./event-engine.md), Capa 4), que observa todas las capas y produce el dato de verdad. Dashboards las **proyecta y presenta**; su definición canónica vive en el motor de eventos:
+
+| Métrica derivada | Definición canónica (resumen) | Dueño |
+|---|---|---|
+| **Progreso / % de avance** | Tareas completadas **ponderadas** (por tiempo estándar o por peso configurable) sobre el total de la Ejecución | [event-engine.md](./event-engine.md) |
+| **Cuello de botella** | Recurso o tarea con mayor **cola o espera acumulada** | [event-engine.md](./event-engine.md) |
+| **Tiempo muerto** | Intervalos **sin eventos productivos** dentro de una ventana planificada (se cruza con [downtime.md](./downtime.md)) | [event-engine.md](./event-engine.md) |
+| **Productividad por recurso** | Trabajo efectivo atribuido a un Activo/persona sobre tiempo disponible; requiere que cada señal esté **ligada a un Activo** ([digital-twin.md](./digital-twin.md)) | [event-engine.md](./event-engine.md) |
+| **Costo real vs estimado** | Consumo real de insumos y tiempos contra los estándares del Proceso | [event-engine.md](./event-engine.md) + [work-model.md](./work-model.md) |
 
 ---
 
@@ -169,12 +214,17 @@ flowchart LR
 | `rm_oee` | Production + Downtime + Quality (compuesto) | OEE y sus 3 factores |
 | `rm_consumption` | Devices/Ingestion (`reading`) | Consumo, consumo por unidad producida |
 | `rm_alerts` | Rules Engine / Notifications | Alarmas activas, severidad, antigüedad |
+| `rm_execution` | Ejecución (Lote/Proyecto) + Motor de eventos | **Progreso/% de avance**, hitos, desvío de cronograma, estado de tareas |
+| `rm_flow` | Motor de eventos (derivadas) | **Cuellos de botella**, **tiempos muertos**, productividad por recurso, costo real vs estimado |
+
+> Los read models `rm_execution` y `rm_flow` proyectan **métricas ya derivadas por el motor de eventos** ([event-engine.md](./event-engine.md)); Dashboards no las recalcula ni las reinterpreta, igual que hace con las fórmulas de los dominios. Sirven a los **KPIs comunes** y a los **propios del perfil proyecto** de §2.5.
 
 > `rm_oee` es un read model **compuesto**: un proyector suscrito a los tres dominios mantiene los numeradores y denominadores de cada factor por dimensión, y expone el producto ya calculado con la fórmula canónica.
 
 ### 4.4 Fronteras con otros servicios
 
-- **Contra los dominios:** Dashboards **solo lee** eventos; nunca escribe en Production/Scrap/Quality/Downtime.
+- **Contra los dominios:** Dashboards **solo lee** eventos; nunca escribe en Production/Scrap/Quality/Downtime. Tampoco captura: la **entrada** de datos del operario es un **Formulario de captura** de la Capa 1 (§1.1, [digital-twin.md](./digital-twin.md)).
+- **Contra [event-engine.md](./event-engine.md):** el motor de eventos **deriva** las métricas (progreso, cuellos de botella, tiempos muertos, productividad, costo real); Dashboards las **visualiza**. La definición de una métrica derivada se cambia en el motor de eventos, nunca en un widget.
 - **Contra [reports.md](./reports.md):** Reports consume los **mismos read models** para generar documentos exportables/programados; la lógica de KPI no se duplica.
 - **Contra [rules-engine.md](./rules-engine.md):** las reglas evalúan el **stream de eventos** en tiempo real (no los read models de Dashboards); si una regla necesita un agregado, ese agregado se publica como evento derivado. Un tablero puede **enlazar** a la regla que originó una alarma mostrada.
 
@@ -219,6 +269,8 @@ Los tableros por defecto se diseñan alrededor de las **personas canónicas** (s
 | **Mantenimiento** | Día/semana, activos | "Salud de activos": MTBF, MTTR, paradas por máquina | MTBF, MTTR, Disponibilidad | Histórico + real |
 | **Gerencia** | Semana/mes/trimestre, empresa | "Dirección": OEE por planta, tendencias, scrap por costo, comparativas | OEE, Tendencias, Scrap (costo) | Histórico |
 | **Administrador (tenant)** | Configuración | Salud de tableros, uso, definición de KPIs/umbrales | — (meta) | Configuración |
+
+> **Los tableros por defecto de esta matriz asumen perfil repetitivo** (es el caso más frecuente en manufactura seriada). Para ejecuciones de **perfil proyecto**, el mismo rol ve el tablero equivalente con el set de §2.5: **% de avance, hitos, desvío de cronograma y ruta crítica** en lugar de OEE/takt/ciclo. Los KPIs **comunes** (tiempos muertos, cuellos de botella, productividad, costo real vs estimado) aparecen en **ambos**.
 
 ### 6.2 Tablero del **Operario** (esquema)
 
@@ -370,7 +422,11 @@ El **color** del andon puede provenir de umbrales simples del propio widget o de
 
 | Dashboards depende de | Para |
 |---|---|
-| [production.md](./production.md) | Producción, eficiencia, piezas totales/buenas, ciclos |
+| [event-engine.md](./event-engine.md) | **Progreso, cuellos de botella, tiempos muertos**, productividad por recurso, costo real (métricas derivadas) |
+| [work-model.md](./work-model.md) | **Perfil** del Proceso (repetitivo/proyecto) para elegir el set de KPIs; tiempos estándar |
+| [execution.md](./execution.md) | Estado y avance de Lotes y Proyectos, hitos, tareas instanciadas |
+| [digital-twin.md](./digital-twin.md) | Jerarquía de activos para agregación, y frontera con el **Formulario de captura** |
+| [production.md](./production.md) | Producción, eficiencia, piezas totales/buenas, ciclos (perfil repetitivo) |
 | [scrap.md](./scrap.md) | Scrap Rate, motivos, costo de scrap |
 | [quality.md](./quality.md) | Calidad (factor), FPY, defectos |
 | [downtime.md](./downtime.md) | Disponibilidad, paradas, MTBF, MTTR |
@@ -392,3 +448,6 @@ El **color** del andon puede provenir de umbrales simples del propio widget o de
 6. **Tableros compuestos multi-planta:** para gerencia con muchas plantas, ¿cómo se equilibra el aislamiento DB-per-tenant con vistas consolidadas de la misma empresa (varias plantas, misma DB de tenant)?
 7. **Andon offline:** si el edge pierde conexión, ¿el andon local muestra el último estado con marca de antigüedad, o se apaga? ¿Hay caché local en planta?
 8. **Definición canónica de "Eficiencia":** confirmar si Eficiencia = Producción/Objetivo es suficiente o si convive con Rendimiento del OEE para evitar confusión de usuarios.
+9. **Ponderación del % de avance:** ¿el progreso se pondera por **tiempo estándar** de tarea (default) o por un **peso configurable** por Proceso? ¿Se puede cambiar la ponderación con ejecuciones en curso sin distorsionar la serie histórica?
+10. **Tableros mixtos repetitivo + proyecto:** para un tenant con ambos perfiles, ¿se ofrece un tablero consolidado con solo KPIs comunes, o dos tableros separados por perfil? ¿Cómo se rotula un OEE agregado que ignora las ejecuciones de proyecto?
+11. **Tableros por perfil en el MVP:** si el MVP arranca solo con el perfil repetitivo, ¿los KPIs de proyecto (% avance, ruta crítica, hitos) se documentan ahora y se implementan después, o se difieren por completo?

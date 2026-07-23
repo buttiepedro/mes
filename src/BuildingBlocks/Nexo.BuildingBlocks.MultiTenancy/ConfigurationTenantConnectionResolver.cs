@@ -9,7 +9,7 @@ namespace Nexo.BuildingBlocks.MultiTenancy;
 /// <remarks>
 /// The production resolver backed by the Tenant Connection Registry (Neon control plane +
 /// AWS Secrets Manager) is intentionally out of scope for the scaffold.
-/// TODO: implement the Registry-backed resolver described in design/01-multi-tenancy-connection.md.
+/// TODO: implement the Registry-backed resolver described in docs/design/01-multi-tenancy-connection.md.
 /// </remarks>
 public sealed class ConfigurationTenantConnectionResolver : ITenantConnectionResolver
 {

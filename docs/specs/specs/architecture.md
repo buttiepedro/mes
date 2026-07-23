@@ -1,18 +1,20 @@
 # Arquitectura de la Plataforma Nexo
 
-> **Documento:** `specs/specs/architecture.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-11
+> **Documento:** `specs/specs/architecture.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-13
 > **Roles:** Product Manager · Software Architect · UX Designer
-> **Relacionados:** [data-ingestion.md](./data-ingestion.md) · [scalability.md](./scalability.md) · [multi-tenancy.md](./multi-tenancy.md) · [security.md](./security.md) · [integrations.md](./integrations.md) · [control-plane.md](./control-plane.md) · [devices.md](./devices.md) · [traceability.md](./traceability.md) · [glossary.md](./glossary.md)
+> **Relacionados:** [layered-architecture.md](./layered-architecture.md) · [digital-twin.md](./digital-twin.md) · [work-model.md](./work-model.md) · [execution.md](./execution.md) · [event-engine.md](./event-engine.md) · [master-data.md](./master-data.md) · [data-ingestion.md](./data-ingestion.md) · [scalability.md](./scalability.md) · [multi-tenancy.md](./multi-tenancy.md) · [security.md](./security.md) · [integrations.md](./integrations.md) · [control-plane.md](./control-plane.md) · [devices.md](./devices.md) · [traceability.md](./traceability.md) · [glossary.md](./glossary.md)
 
 ## Resumen ejecutivo
 
-Nexo es la **capa única de captura de datos industriales entre la planta y el ERP**. Su arquitectura existe para resolver un problema estructural: el dato de planta nace heterogéneo (protocolos industriales, cargas manuales, archivos, APIs externas), disperso y sin contexto, mientras que los sistemas de gestión (ERP, empezando por Odoo) necesitan información **normalizada, validada, trazable y sincronizable**. Este documento define cómo se organiza el sistema para lograr esa transformación a escala de miles de empresas y millones de eventos diarios, sin acoplarse a ningún ERP ni a ningún proveedor de nube.
+Nexo es un **sistema de ejecución y trazabilidad del trabajo en planta**. Su arquitectura existe para resolver un problema estructural: el dato de planta nace heterogéneo (protocolos industriales, cargas manuales, archivos, APIs externas), disperso y sin contexto, mientras que el trabajo —una producción repetitiva o un proyecto único— necesita ejecutarse, medirse y documentarse con información **normalizada, validada, trazable** y, cuando el cliente lo requiere, **sincronizable con su ERP**. La plataforma es **autónoma**: opera sin ERP, con master data propia (ver [master-data.md](./master-data.md)); la integración con sistemas de gestión (empezando por Odoo) es un **conector lateral opcional** —un acelerador— y **no** una capa de la arquitectura ni una condición de funcionamiento. Este documento define cómo se organiza el sistema para lograr esa transformación a escala de miles de empresas y millones de eventos diarios, sin acoplarse a ningún ERP ni a ningún proveedor de nube.
 
 La arquitectura es **Cloud Native, orientada a microservicios con Domain-Driven Design (DDD), event-driven y explícitamente NO monolítica**. Cada dominio de negocio (Producción, Calidad, Scrap, Paradas, Trazabilidad, Dispositivos, etc.) es un *bounded context* con su propio ciclo de vida de despliegue, y se comunica con el resto a través de un **backbone de eventos asíncrono** y de un conjunto acotado de llamadas sincrónicas. La captura ocurre en el **borde (edge)**: los PLC, OPC UA y Modbus viven on-premise y un **Agente Edge / Gateway** conecta hacia la nube en modo *outbound* con *store-and-forward* ante cortes de conectividad.
 
 El modelo de datos es **multi-tenant con base de datos por tenant** (requisito NO negociable, ver [multi-tenancy.md](./multi-tenancy.md)): cada empresa tiene su propia base operativa, aislada de las demás, y un **Control Plane** global gobierna el ciclo de vida de los tenants sin almacenar jamás datos operativos de clientes. Este modelo es a la vez la base del aislamiento y la estrategia natural de particionamiento para escalar (ver [scalability.md](./scalability.md)).
 
-Este documento presenta los principios rectores, las vistas de arquitectura al estilo C4 (contexto y contenedores), la justificación de cada límite de servicio, los patrones de comunicación, la arquitectura de captura en el edge, la estrategia de almacenamiento por servicio, la observabilidad, la topología de despliegue sobre Kubernetes agnóstico de nube y un registro de decisiones arquitectónicas (ADR). Es el documento raíz de arquitectura; los detalles de ingesta, escala, integraciones y plano de control se profundizan en sus documentos dedicados.
+Sobre esta arquitectura técnica se superpone una **vista conceptual de cuatro capas** —Física (gemelo digital) → Modelo de trabajo (procesos) → Ejecución (lote o proyecto) → Motor de eventos— que ordena el discurso funcional del producto y explica *dónde vive cada cosa* en términos de negocio. Las capas **no reemplazan** a los microservicios ni a los bounded contexts: son un **lente de lectura transversal**; la unidad de despliegue, propiedad del dato y evolución sigue siendo el **servicio**. La sección 1.6 desarrolla el modelo, la sección 3.1 lo mapea contra la lista canónica de servicios y el documento ancla del conjunto es [layered-architecture.md](./layered-architecture.md).
+
+Este documento presenta los principios rectores, el modelo conceptual por capas, las vistas de arquitectura al estilo C4 (contexto y contenedores), la justificación de cada límite de servicio, los patrones de comunicación, la arquitectura de captura en el edge, la estrategia de almacenamiento por servicio, la observabilidad, la topología de despliegue sobre Kubernetes agnóstico de nube y un registro de decisiones arquitectónicas (ADR). Es el documento raíz de arquitectura; los detalles de ingesta, escala, integraciones y plano de control se profundizan en sus documentos dedicados.
 
 ---
 
@@ -54,6 +56,42 @@ Los siguientes principios son la traducción directa de los fundamentos canónic
 
 > Estos principios se cruzan con los principios canónicos 1–10 del brief. Los complementos de escala (principio 9) se desarrollan en [scalability.md](./scalability.md); los de multi-tenancy (principio 3) en [multi-tenancy.md](./multi-tenancy.md); los de seguridad y observabilidad (principios 7 y 8) en [security.md](./security.md) y en la sección 8 de este documento.
 
+### 1.6 Modelo conceptual de 4 capas (vista transversal)
+
+Además de la descomposición técnica en microservicios, Nexo se explica funcionalmente con un **modelo de cuatro capas**. Cada capa responde a una pregunta de negocio distinta y tiene su documento propio; el documento ancla que las integra es [layered-architecture.md](./layered-architecture.md).
+
+| Capa | Nombre | Responde a | Documento de la capa |
+|---|---|---|---|
+| **1** | **Física — Gemelo digital de la planta** | *¿Qué existe y qué está midiendo?* | [digital-twin.md](./digital-twin.md) |
+| **2** | **Modelo de trabajo — Procesos** | *¿Cómo se hace el trabajo?* (plantilla) | [work-model.md](./work-model.md) |
+| **3** | **Ejecución — Lote o Proyecto** | *¿Qué se está haciendo ahora?* (instancia) | [execution.md](./execution.md) |
+| **4** | **Motor de eventos** | *¿Qué pasó realmente?* (hechos + métricas derivadas) | [event-engine.md](./event-engine.md) |
+
+**Principio rector:** cada capa depende **solo de la de abajo**. La Capa 4 **observa** a las otras tres y es la que produce el dato de verdad (progreso, cuellos de botella, tiempos muertos, productividad por recurso, costo real). Ninguna capa inferior conoce a las superiores: el gemelo digital no sabe qué proceso lo usa, y un proceso no sabe cuántas ejecuciones tiene en curso.
+
+```mermaid
+flowchart TB
+    C4["Capa 4 · Motor de eventos<br/>hechos + métricas derivadas"]
+    C3["Capa 3 · Ejecución<br/>Lote | Proyecto (instancia viva)"]
+    C2["Capa 2 · Modelo de trabajo<br/>Procesos · Tareas · Insumos (plantilla)"]
+    C1["Capa 1 · Física — Gemelo digital<br/>Activos · sensores · cámaras · captura manual"]
+    ERP["ERP del cliente<br/>(conector OPCIONAL, lateral)"]
+
+    C1 --> C2 --> C3
+    C3 -.->|"observada por"| C4
+    C2 -.->|"observada por"| C4
+    C1 -.->|"observada por"| C4
+    C3 -.->|"exporta hechos (opcional)"| ERP
+    ERP -.->|"aporta contexto/catálogos (opcional)"| C2
+```
+
+**Aclaraciones no negociables de esta vista:**
+
+- **Las capas NO reemplazan a los microservicios.** Son una **vista conceptual** para razonar sobre el producto y ordenar la documentación. Los **bounded contexts** de la sección 3 siguen siendo la unidad real de **despliegue, propiedad del dato, escalado y aislamiento de fallos**. Una capa se materializa con varios servicios y un servicio puede aportar a más de una capa (ver mapeo en 3.1).
+- **El ERP no es una capa.** Es un **conector lateral opcional** ("plus"), conectado de costado a través de **Connectors / Integrations** y su **ACL** (ver [integrations.md](./integrations.md)). El sistema debe funcionar **standalone**, con catálogos propios (productos, insumos, unidades de medida, procesos, personas/roles, centros de costo) gobernados por [master-data.md](./master-data.md); en modo **conectado**, esos catálogos se sincronizan y el ERP puede ser fuente de verdad de los que corresponda.
+- **Cada sensor/señal está ligado a un Activo** (Capa 1): un dato nunca "flota". Es la condición que permite atribuir eventos a tareas y ejecuciones, y calcular métricas por recurso. Ver [digital-twin.md](./digital-twin.md) y [devices.md](./devices.md).
+- **La Capa 4 es la única que deriva métricas.** Los dominios registran hechos; el motor de eventos los interpreta. El pipeline que alimenta la capa (ingesta y normalización) se especifica en [data-ingestion.md](./data-ingestion.md).
+
 ---
 
 ## 2. Vistas de arquitectura (estilo C4)
@@ -92,6 +130,8 @@ flowchart TB
 
     PROV["Proveedor de Nexo\n(Super Admin, Soporte, Partners)"] -->|"Gobierno multi-tenant\nvía Control Plane"| NEXO
 ```
+
+> **Lectura del contexto con el modelo por capas:** los actores y fuentes de la izquierda (operarios, PLCs, sensores, cámaras) son la **Capa 1**; el trabajo que se planifica y ejecuta dentro de Nexo son las **Capas 2 y 3**; lo que sale hacia tableros, alertas y ERP lo produce la **Capa 4**. El **ERP es un sistema externo opcional**: el diagrama lo muestra conectado de costado porque la plataforma opera sin él (modo *standalone*, con master data propia). Ver 1.6, [master-data.md](./master-data.md) e [integrations.md](./integrations.md).
 
 ### 2.2 Nivel 2 — Diagrama de contenedores
 
@@ -201,6 +241,22 @@ La siguiente tabla usa **exactamente** la lista canónica de microservicios (sec
 | **AI / Computer Vision** | Compartido | Modelos + storage por tenant | Visión artificial, OCR, ML (fase futura) | Cargas de cómputo especializado (GPU, modelos), ciclo de vida de modelos y escalado propios; fase futura que no debe condicionar el core del MVP. |
 
 > Regla canónica: los servicios **"por tenant"** operan SIEMPRE contra la DB del tenant resuelto (vía Tenant Connection Registry). Los **"compartidos/global"** nunca almacenan datos operativos de clientes en una DB común (salvo config/metadatos en Control Plane). Ver [multi-tenancy.md](./multi-tenancy.md) y [control-plane.md](./control-plane.md).
+
+### 3.1 Mapeo capa conceptual ↔ bounded contexts / microservicios
+
+La vista por capas (1.6) y la lista de servicios de arriba conviven: la capa dice **qué significa** una responsabilidad para el negocio; el bounded context dice **quién la ejecuta y despliega**. El mapeo no es 1:1 —una capa se materializa con varios servicios y un servicio puede aportar a más de una capa—.
+
+| Capa conceptual | Documento de la capa | Bounded contexts / microservicios que la materializan | Qué aporta cada uno |
+|---|---|---|---|
+| **1 · Física — Gemelo digital** | [digital-twin.md](./digital-twin.md) | **Devices**, master data de jerarquía física (Planta/Sector/Línea/Activo), **Ingestion / Edge Gateway** (Agente Edge), **Files / Media** | Devices modela hardware, señales y salud; la jerarquía física define los Activos; el Agente Edge conversa con el hardware; Files/Media custodia la evidencia capturada (foto, snapshot, archivo) |
+| **2 · Modelo de trabajo — Procesos** | [work-model.md](./work-model.md) | **Production** (perfil repetitivo: productos, rutas, órdenes), **Quality** (criterios y puntos de control de las tareas), catálogos de **Master Data** (procesos, insumos, unidades, roles) | Definición versionada de Procesos, Tareas, Insumos, responsables y tiempos estándar. Es **plantilla**, no ejecución |
+| **3 · Ejecución — Lote o Proyecto** | [execution.md](./execution.md) | **Production** (ejecución y sus registros), **Quality**, **Scrap**, **Downtime**, **Notifications** (avisos de asignación/vencimiento) | Instancias vivas del Proceso: estado, tareas instanciadas, asignación, consumo real de insumos, avance y evidencia |
+| **4 · Motor de eventos** | [event-engine.md](./event-engine.md) | **Ingestion / Edge Gateway** (pipeline), **Traceability / Event Store** (historial inmutable y genealogía), **Rules Engine**, **Dashboards / Analytics**, **Reports** | Contrato del evento canónico, hechos observados y **métricas derivadas** (progreso, cuellos de botella, tiempos muertos, productividad, costo real) |
+| **Transversal (no son capa)** | — | **Identity & Access**, **Audit**, **API Gateway/BFF**, **AI / Computer Vision**, Control Plane (**Tenant Provisioning**, **Administration & Licensing**, **Marketplace**, **Observability**) | Identidad, auditoría, borde, gobierno multi-tenant y capacidades especializadas: atraviesan las cuatro capas sin pertenecer a ninguna |
+| **Conector lateral OPCIONAL** | [integrations.md](./integrations.md) · [master-data.md](./master-data.md) | **Connectors / Integrations** (ACL a ERPs) | Sincronización bidireccional con el ERP cuando el cliente lo tiene. **No es una capa**: es un "plus" que puede estar ausente sin degradar el sistema |
+
+- **Regla de lectura:** si una discusión es sobre *qué significa* algo para el usuario, se razona por **capas**; si es sobre *dónde se despliega, quién es dueño del dato o cómo escala*, se razona por **bounded context**. Ninguna de las dos vistas invalida a la otra.
+- **Consecuencia de diseño:** que un servicio aparezca en dos capas (p. ej. Production en Capa 2 y Capa 3, o Ingestion en Capa 1 y Capa 4) es esperable y **no** obliga a partirlo: el criterio de partición sigue siendo el de la sección 3 (cohesión, cadencia de cambio, perfil de carga, aislamiento).
 
 ---
 
@@ -430,12 +486,20 @@ Registro de decisiones significativas. Cada una documenta contexto, alternativas
 | ADR-08 | Kubernetes agnóstico de nube | Portabilidad y evitar lock-in de proveedor | PaaS propietario; serverless específico de nube | Kubernetes + abstracciones de nube | (+) Portabilidad multi-nube/on-prem. (−) Mayor responsabilidad operativa sobre la plataforma |
 | ADR-09 | Persistencia poliglota (relacional + time-series + object + read models) | Patrones de acceso muy distintos por servicio | Un único motor para todo | Almacén por patrón de acceso, privado por servicio | (+) Cada carga en el motor óptimo. (−) Mayor diversidad tecnológica a operar |
 | ADR-10 | Evento canónico inmutable como contrato central | Fuentes heterogéneas que deben converger en un modelo único | Formatos por origen; sin normalización | Evento canónico normalizado, inmutable, versionado | (+) Interoperabilidad y trazabilidad. (−) Requiere gobierno de esquema y versionado con compatibilidad |
+| ADR-11 | Modelo de 4 capas como **vista conceptual**, no como descomposición de despliegue | Se necesita un relato funcional único (planta → proceso → ejecución → hechos) sin romper la partición por dominios ya decidida | Reorganizar los microservicios en 4 servicios "por capa"; mantener solo la vista por dominios; convivencia de ambas vistas | Convivencia: capas para el discurso funcional, bounded contexts para el despliegue (ver 1.6 y 3.1) | (+) Claridad de producto sin refactor arquitectónico; (−) exige disciplina de documentación para que ambas vistas no se contradigan (mapeo explícito obligatorio) |
+| ADR-12 | ERP como **conector lateral opcional**; la plataforma es autónoma | El sistema debe funcionar sin ERP; el ERP es un acelerador, no la razón de ser (reencuadre de INT-01) | Depender del ERP como fuente de contexto (posición original); ERP opcional con master data propia | ERP opcional + **master data propia** de la plataforma ([master-data.md](./master-data.md)), con modos *standalone* y *conectado* | (+) Mercado ampliado y despliegue sin dependencia externa; (−) **agranda el alcance**: hay que construir y mantener catálogos propios (productos, insumos, unidades, procesos, personas, centros de costo) y resolver la convivencia/precedencia con el ERP cuando existe |
 
 ---
 
 ## 11. Referencias cruzadas
 
-- Ingesta y normalización (core del producto): [data-ingestion.md](./data-ingestion.md)
+- **Modelo por capas (documento ancla):** [layered-architecture.md](./layered-architecture.md)
+- Capa 1 · Gemelo digital de la planta: [digital-twin.md](./digital-twin.md)
+- Capa 2 · Modelo de trabajo (Procesos, Tareas, Insumos): [work-model.md](./work-model.md)
+- Capa 3 · Ejecución (Lote / Proyecto): [execution.md](./execution.md)
+- Capa 4 · Motor de eventos y métricas derivadas: [event-engine.md](./event-engine.md)
+- Master data propia y modo standalone vs. conectado: [master-data.md](./master-data.md)
+- Ingesta y normalización (pipeline de la Capa 4): [data-ingestion.md](./data-ingestion.md)
 - Escalabilidad y capacity planning: [scalability.md](./scalability.md)
 - Multi-tenancy (DB-per-tenant) y flujo de alta: [multi-tenancy.md](./multi-tenancy.md)
 - Control Plane y Tenant Connection Registry: [control-plane.md](./control-plane.md)
@@ -456,3 +520,6 @@ Registro de decisiones significativas. Cada una documenta contexto, alternativas
 5. **Multi-región y residencia de datos:** ¿Cuándo se activa distribución geográfica de DBs por tenant y qué requisitos de residencia (p. ej. datos que no salen del país) debe soportar la topología?
 6. **Nombre del producto:** "Nexo" es un working name provisional (ver brief §1); pendiente de confirmación de marca.
 7. **Schema registry:** ¿Qué mecanismo gobierna el versionado del Evento canónico y las políticas de compatibilidad (hacia atrás/adelante) entre productores y consumidores?
+8. **Bounded context propio para Capas 2 y 3:** el modelo de trabajo (Proceso/Tarea/Insumo) y la ejecución (Run) se alojan hoy dentro de **Production**. ¿Se extraen como servicios propios (*Work Model* y *Execution*) cuando el perfil **proyecto** entre en escena, o Production absorbe ambos perfiles? (impacta ADR-01 y la sección 3).
+9. **Alcance del modo standalone en el MVP (deriva de ADR-12):** ¿cuánta master data propia entra al MVP y qué catálogos se consideran mínimos viables? Reencuadra la decisión **INT-01** (Odoo en MVP), que pasa a "opcional" y debe revisarse en el [tablero de decisiones](../open-questions-board.md).
+10. **Precedencia de datos en modo conectado:** cuando existe ERP, ¿qué catálogos tienen al ERP como fuente de verdad y cuáles quedan gobernados por la plataforma? ¿Cómo se resuelven los conflictos de sincronización bidireccional? (coordinar con [master-data.md](./master-data.md) e [integrations.md](./integrations.md)).

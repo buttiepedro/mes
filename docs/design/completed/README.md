@@ -29,26 +29,27 @@ verificó y qué decisiones se tomaron al bajar el diseño a código*.
 |---|---|---|---|---|
 | [001](./001-scaffold-inicial.md) | Scaffold del monorepo + slice de Producción + infra local | ✅ Completado y verificado | 2026-07-13 | [00](../00-tech-baseline.md) · [03](../03-data-schema.md) · [04](../04-service-contracts.md) |
 | [002](./002-masterdata.md) | Servicio `Nexo.MasterData` (catálogos mínimos, MOD-17) | ✅ Completado y verificado | 2026-07-13 | [03](../03-data-schema.md) §2.5 · [04](../04-service-contracts.md) §2.5 |
+| [003](./003-workmodel.md) | Servicio `Nexo.WorkModel` (Capa 2 · Procesos + DAG, MOD-18) | ✅ Completado y verificado | 2026-07-24 | [03](../03-data-schema.md) §2.6 · [04](../04-service-contracts.md) §2.6 |
 
 ## Estado general del código
 
 | Servicio | Capa | Estado |
 |---|---|---|
 | `BuildingBlocks` (Domain, Application, MultiTenancy, Messaging, Observability, Web) | transversal | ✅ Scaffold verificado |
-| `Nexo.Production` | 3 (perfil repetitivo) | ✅ Scaffold verificado · modelo previo al pivot por capas |
+| `Nexo.Production` | 3 (perfil repetitivo) | ✅ Scaffold verificado · outbox alineado ([003](./003-workmodel.md)) · modelo previo al pivot |
 | `Nexo.MasterData` | master data | ✅ Implementado y verificado ([002](./002-masterdata.md)) |
-| `Nexo.WorkModel` | 2 | 🔜 Siguiente |
-| `Nexo.Execution` | 3 | ⬜ Pendiente |
+| `Nexo.WorkModel` | 2 | ✅ Implementado y verificado ([003](./003-workmodel.md)) |
+| `Nexo.Execution` | 3 | 🔜 Siguiente |
 | `Nexo.Tenancy` · `Nexo.Identity` · `Nexo.Ingestion` · resto | varias | ⬜ Pendiente |
 
 ## Pendientes transversales acumulados
 
 Los que **cruzan varios servicios** y conviene no perder de vista:
 
-| Pendiente | Prioridad | Origen |
-|---|---|---|
-| **Relay del outbox → Kafka**: los eventos se persisten pero nadie los publica | **Alta** | [001](./001-scaffold-inicial.md) |
-| **Alinear el outbox de `Nexo.Production`** a su propio schema (hoy usa `platform`) y actualizar `03-data-schema.md` con la convención "outbox por servicio" | **Alta** | [002](./002-masterdata.md) |
-| **Registrar validadores en `Nexo.Production`** (los suyos no se ejecutan) | Media | [002](./002-masterdata.md) |
-| **Sin servicio de Identity**: no se puede ejercitar escritura autenticada end-to-end | Media | [001](./001-scaffold-inicial.md) |
-| **Vulnerabilidad NU1902** en OpenTelemetry OTLP 1.9.0 | Media | [001](./001-scaffold-inicial.md) |
+| Pendiente | Prioridad | Origen | Estado |
+|---|---|---|---|
+| **Relay del outbox → Kafka**: los eventos se persisten pero nadie los publica | **Alta** | [001](./001-scaffold-inicial.md) | Abierto |
+| ~~Alinear el outbox de `Nexo.Production`~~ + actualizar `03-data-schema.md` | Alta | [002](./002-masterdata.md) | ✅ Saldado en [003](./003-workmodel.md) |
+| **Registrar validadores en `Nexo.Production`** (los suyos no se ejecutan) | Media | [002](./002-masterdata.md) | Abierto |
+| **Sin servicio de Identity**: no se puede ejercitar escritura autenticada end-to-end | Media | [001](./001-scaffold-inicial.md) | Abierto |
+| **Vulnerabilidad NU1902** en OpenTelemetry OTLP 1.9.0 | Media | [001](./001-scaffold-inicial.md) | Abierto |

@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Nexo.BuildingBlocks.Messaging;
 
-namespace Nexo.Production.Infrastructure.Configurations;
+namespace Nexo.WorkModel.Infrastructure.Configurations;
 
 /// <summary>
 /// Transactional outbox table, owned by this service and living in its own domain schema.
@@ -18,20 +18,20 @@ public sealed class OutboxMessageConfiguration : IEntityTypeConfiguration<Outbox
 {
     public void Configure(EntityTypeBuilder<OutboxMessage> builder)
     {
-        builder.ToTable("outbox_messages", ProductionDbContext.DomainSchema);
+        builder.ToTable("outbox_messages", WorkModelDbContext.DomainSchema);
 
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id).ValueGeneratedNever();
+        builder.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
 
-        builder.Property(x => x.TenantId).IsRequired();
-        builder.Property(x => x.Type).HasMaxLength(128).IsRequired();
-        builder.Property(x => x.Payload).HasColumnType("jsonb").IsRequired();
-        builder.Property(x => x.OccurredOn).IsRequired();
-        builder.Property(x => x.ProcessedOn);
-        builder.Property(x => x.Error);
+        builder.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired();
+        builder.Property(x => x.Type).HasColumnName("type").HasMaxLength(128).IsRequired();
+        builder.Property(x => x.Payload).HasColumnName("payload").HasColumnType("jsonb").IsRequired();
+        builder.Property(x => x.OccurredOn).HasColumnName("occurred_on").IsRequired();
+        builder.Property(x => x.ProcessedOn).HasColumnName("processed_on");
+        builder.Property(x => x.Error).HasColumnName("error");
 
         // Partial-index equivalent for the relay sweep (pending = not yet processed).
-        builder.HasIndex(x => x.ProcessedOn);
-        builder.HasIndex(x => x.TenantId);
+        builder.HasIndex(x => x.ProcessedOn).HasDatabaseName("ix_work_outbox_processed_on");
+        builder.HasIndex(x => x.TenantId).HasDatabaseName("ix_work_outbox_tenant_id");
     }
 }

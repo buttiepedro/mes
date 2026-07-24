@@ -23,6 +23,10 @@ public static class EventTypes
 
     public const string Device_StatusChanged = "nexo.device.status_changed";
 
+    public const string Process_VersionPublished = "nexo.process.version_published";
+
+    public const string Process_VersionSuspended = "nexo.process.version_suspended";
+
     public const string MasterData_RecordUpserted = "nexo.masterdata.record_upserted";
 
     public const string MasterData_RecordArchived = "nexo.masterdata.record_archived";

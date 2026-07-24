@@ -1982,8 +1982,25 @@ create index ix_notif_status on rules.notifications_log (status);
 
 ### 2.17 Cross-cutting: outbox, inbox, files, auditoría — `platform`
 
+> ⚠️ **Corrección de diseño (2026-07-13, surgida al implementar — ver [completed/002](./completed/002-masterdata.md)).**
+> **El outbox NO es compartido: cada servicio es dueño del suyo, en su propio schema**
+> (`production.outbox_messages`, `master.outbox_messages`, `work.outbox_messages`, …).
+>
+> **Por qué.** Los servicios de un tenant comparten **una sola base física**. Con una única tabla
+> `platform.outbox`, el primer servicio que migra la crea y **todos los demás fallan** con
+> `42P07: relation "outbox_messages" already exists` — que es exactamente lo que ocurrió al aplicar la
+> segunda migración. Además, el outbox pertenece a la **frontera transaccional del servicio**: se escribe
+> en la misma transacción que su cambio de estado. Tenerlo por servicio elimina la ambigüedad de
+> propiedad de la tabla y la **dependencia de orden entre migraciones** de servicios distintos.
+>
+> **Consecuencia operativa:** cada servicio corre su propio relay, que drena su propia tabla. El DDL de
+> abajo se mantiene como **forma canónica de la tabla** (columnas e índices), pero se materializa **una vez
+> por schema de servicio**, no una sola vez en `platform`. `processed_events` (inbox) sigue el mismo criterio.
+
 ```sql
 -- Transactional Outbox (publica eventos atómicamente con el cambio de estado)
+-- FORMA CANÓNICA: se crea una vez POR SCHEMA DE SERVICIO (production.*, master.*, work.*, …),
+-- no una sola vez en platform. Ver la corrección de diseño de arriba.
 create table platform.outbox (
     id             uuid primary key default nexo.uuid_generate_v7(),
     aggregate_type text not null,

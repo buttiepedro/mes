@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nexo.WorkModel.Domain\Nexo.WorkModel.Domain.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\Nexo.BuildingBlocks.Application\Nexo.BuildingBlocks.Application.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\Nexo.BuildingBlocks.Messaging\Nexo.BuildingBlocks.Messaging.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MediatR" />
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+
+</Project>

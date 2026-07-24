@@ -1,18 +1,42 @@
-# 06 · Conector Odoo — ACL, Sync Jobs, Mapeo y Fiabilidad (MVP)
+# 06 · Conector Odoo (OPCIONAL) — ACL, Sync Jobs, Mapeo y Fiabilidad
 
-> **Documento:** `design/06-odoo-connector.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-11
+> **Documento:** `design/06-odoo-connector.md` · **Estado:** Borrador v0.2 · **Actualizado:** 2026-07-13
 > **Roles:** Software Architect · Tech Lead
 > **Relacionados (diseño):** [00-tech-baseline.md](./00-tech-baseline.md) · [01-multi-tenancy-connection.md](./01-multi-tenancy-connection.md) · [02-event-model.md](./02-event-model.md) · [03-data-schema.md](./03-data-schema.md) · [04-service-contracts.md](./04-service-contracts.md) · [05-edge-agent.md](./05-edge-agent.md) · [07-security.md](./07-security.md) · [08-observability-ops.md](./08-observability-ops.md)
-> **Relacionados (specs):** [../specs/specs/integrations.md](../specs/specs/integrations.md) · [../specs/specs/production.md](../specs/specs/production.md) · [../specs/specs/scrap.md](../specs/specs/scrap.md) · [../specs/specs/quality.md](../specs/specs/quality.md) · [../specs/specs/control-plane.md](../specs/specs/control-plane.md) · [../specs/specs/security.md](../specs/specs/security.md) · [../specs/specs/data-model.md](../specs/specs/data-model.md) · [../specs/specs/architecture.md](../specs/specs/architecture.md) · [../specs/open-questions-board.md](../specs/open-questions-board.md)
+> **Relacionados (specs):** [../specs/specs/layered-architecture.md](../specs/specs/layered-architecture.md) · [../specs/specs/master-data.md](../specs/specs/master-data.md) · [../specs/specs/integrations.md](../specs/specs/integrations.md) · [../specs/specs/production.md](../specs/specs/production.md) · [../specs/specs/scrap.md](../specs/specs/scrap.md) · [../specs/specs/quality.md](../specs/specs/quality.md) · [../specs/specs/control-plane.md](../specs/specs/control-plane.md) · [../specs/specs/security.md](../specs/specs/security.md) · [../specs/specs/data-model.md](../specs/specs/data-model.md) · [../specs/specs/architecture.md](../specs/specs/architecture.md) · [../specs/open-questions-board.md](../specs/open-questions-board.md)
 
 ## Resumen ejecutivo
 
-Este documento es el **diseño técnico del conector Odoo** de Nexo, el primer conector del MVP y la
+Este documento es el **diseño técnico del conector Odoo** de Nexo, el primer conector de la plataforma y la
 implementación de referencia del patrón **Conector + Anti-Corruption Layer (ACL)** definido en
 [`integrations.md`](../specs/specs/integrations.md). Traduce las decisiones funcionales y de negocio de
 esa spec a un diseño concreto sobre el stack del [baseline técnico](./00-tech-baseline.md): **.NET 8**,
 Clean Architecture, **eventos async** sobre MassTransit/MSK, **DB-per-tenant** en Neon y **credenciales en
 AWS Secrets Manager** (solo referencias).
+
+> ## ⚠️ El conector es OPCIONAL (reencuadre del 2026-07-13)
+>
+> Desde la adopción del **modelo de 4 capas**
+> ([`layered-architecture.md`](../specs/specs/layered-architecture.md)), **el ERP no es una capa**: es un
+> **conector lateral opcional**, un *plus*. En consecuencia:
+>
+> - **Ningún flujo del MVP puede depender de este conector.** Captura, modelo de trabajo, ejecución, eventos,
+>   trazabilidad, KPIs y tableros funcionan **completos** sin Odoo. Si un flujo se rompe al desactivar el
+>   conector, es un **defecto de diseño**, no una limitación de configuración.
+> - **En modo standalone no hay pull de contexto:** los catálogos (ítems, UoM, insumos, motivos, personas) y el
+>   disparador del trabajo salen de **`Nexo.MasterData`** ([`master-data.md`](../specs/specs/master-data.md)).
+>   Ver **§1.4**.
+> - **Un tenant puede conectar un ERP más tarde** sin perder ni duplicar su master data: hay una
+>   **conciliación de identidad** asistida, con confirmación humana y sin recálculo del histórico. Ver **§3.5**.
+> - **`Nexo.Connectors` no es un prerrequisito de despliegue:** se habilita por tenant desde el Marketplace,
+>   gobernado por plan/licencia y feature flags (**ADR-T11** de [00-tech-baseline.md](./00-tech-baseline.md) §9).
+>
+> **Reencuadre de INT-01.** La decisión **INT-01** fijaba Odoo como **conector obligatorio del MVP**. Queda
+> marcada como **♻️ a revisar** en el [tablero de decisiones](../specs/open-questions-board.md): se conserva su
+> **alcance funcional** (pull de contexto, push agregado por cierre de corrida, calidad bidireccional opcional),
+> pero **deja de ser obligatoria**. Lo que era requisito de fase pasa a ser **capacidad habilitable**, y la
+> prioridad de esfuerzo se mueve del conector hacia la **master data propia**. Si el conector entra al MVP o se
+> corre a V1 es una decisión comercial abierta (**OD-09**, ver "Decisiones pendientes").
 
 El principio rector es **no negociable**: el Core de Nexo (dominios `Production`, `Scrap`, `Quality`)
 **no conoce Odoo**. El dominio habla su **lenguaje canónico**; el servicio `Nexo.Connectors` es la frontera
@@ -20,7 +44,8 @@ donde vive el ACL que traduce **modelo canónico ↔ modelo Odoo**. Esto se mate
 `IErpConnector`** (C# ilustrativo) que habilita agregar **SAP/Dynamics/Oracle** en V2 como un adapter nuevo,
 sin tocar el dominio.
 
-Alcance del MVP (decisión **INT-01**, ver [tablero](../specs/open-questions-board.md)):
+Alcance del conector **cuando el tenant lo habilita** (INT-01 reencuadrada, ver
+[tablero](../specs/open-questions-board.md)):
 
 - **Pull** programado de **contexto de captura**: MO (`mrp.production`), Producto (`product.product`),
   UoM (`uom.uom`) y Motivos (reason codes).
@@ -29,10 +54,11 @@ Alcance del MVP (decisión **INT-01**, ver [tablero](../specs/open-questions-boa
 - **Push** de **scrap** como `stock.scrap`, agregado por cierre de corrida.
 - **Calidad bidireccional opcional** (`quality.check`), detrás de un feature flag.
 
-Todo el flujo es **asíncrono, idempotente, con reintentos/backoff, DLQ y reconciliación**; el ERP es la
-**fuente de verdad del contexto** (MO/catálogos) y Nexo es la **fuente de verdad de la ejecución real**
-(cantidades producidas y scrap). La captura de planta **nunca** se bloquea si Odoo está caído
-(store-and-forward + cola).
+Todo el flujo es **asíncrono, idempotente, con reintentos/backoff, DLQ y reconciliación**; **en modo conectado**
+el ERP es la **fuente de verdad del contexto** (MO/catálogos) para las entidades que se declaren gobernadas por
+él, y Nexo es **siempre** la **fuente de verdad de la ejecución real** (cantidades producidas y scrap). La
+captura de planta **nunca** se bloquea si Odoo está caído (store-and-forward + cola) **ni si Odoo no existe**
+(modo standalone, §1.4).
 
 > **Nota de alcance:** este es un documento de **diseño**, no de implementación. El C# es **ilustrativo**
 > (firmas de puertos y DTOs) para fijar contratos; los esquemas de config y mapeo son **declarativos**.
@@ -44,8 +70,10 @@ Todo el flujo es **asíncrono, idempotente, con reintentos/backoff, DLQ y reconc
 ### 1.1 Dónde vive y qué desacopla
 
 El conector Odoo vive en el servicio por-tenant **`Nexo.Connectors`** (ver estructura del monorepo en
-[00-tech-baseline.md §2](./00-tech-baseline.md)). Los dominios de negocio **no dependen** de este servicio ni
-de Odoo: se comunican **solo por eventos canónicos** sobre el backbone (MSK/MassTransit).
+[00-tech-baseline.md §2](./00-tech-baseline.md)), que es **opcional y se habilita por tenant**. Los dominios de
+negocio **no dependen** de este servicio ni de Odoo: se comunican **solo por eventos canónicos** sobre el
+backbone (MSK/MassTransit). Esa es, exactamente, la propiedad que hace que el conector se pueda apagar sin
+consecuencias (§1.4).
 
 ```mermaid
 flowchart LR
@@ -224,6 +252,44 @@ public sealed record CanonicalScrapReport(
     string DedupKey);
 ```
 
+### 1.4 Modo standalone: qué pasa cuando no hay ERP
+
+Es el **modo por defecto** de un tenant nuevo. No es un modo degradado ni un "plan B": es la operación normal
+de la plataforma ([`integrations.md §1.1`](../specs/specs/integrations.md),
+[`master-data.md §3`](../specs/specs/master-data.md)).
+
+> **Regla técnica:** en modo standalone **no hay pull de contexto**. Todo lo que en modo conectado llegaría de
+> Odoo, en standalone **ya vive en `Nexo.MasterData`**, cargado por ABM o importación CSV.
+
+| Capacidad | Modo conectado | **Modo standalone** |
+|---|---|---|
+| **Catálogos** (ítems/SKU, insumos, UoM, motivos) | Pull programado desde Odoo → espejo con `external_ref` | **`Nexo.MasterData`** es la fuente de verdad; alta por ABM o importador CSV con validación y simulación |
+| **Personas y roles** | Configurable (Nexo o ERP/IdP) | `Nexo.MasterData` (dimensión operativa) + `Nexo.Identity` (acceso) |
+| **Disparador del trabajo** | MO de Odoo (`erp.mo.pulled`) **o** alta local | **Siempre local**: alta manual de la Ejecución, plan interno, regla o pedido cargado en `Nexo.MasterData` |
+| **Jerarquía física, Procesos, tareas y DAG** | **Nexo** (el ERP no los modela) | **Nexo** — idéntico |
+| **Ejecución, eventos, evidencia, trazabilidad, KPIs** | **Nexo** | **Nexo** — idéntico, sin ninguna diferencia funcional |
+| **Push de producción y scrap** | `RunClosed` → avance/cierre de MO + `stock.scrap` | **No aplica**: no hay destino externo. Los eventos igual se persisten y proyectan (`Traceability`, `Dashboards`) y se exportan por reportes/CSV |
+| **`Nexo.Connectors`** | Instancia activa por tenant (credenciales + mapeos) | **Sin instancia activa**: el servicio no tiene jobs, no agenda crons y no aparece en el tablero de integraciones |
+
+**Consecuencias de diseño (verificables):**
+
+- **Sin dependencia de compilación ni de runtime.** Ningún servicio del Core referencia `Nexo.Connectors`, ni
+  por gRPC ni por paquete. La comunicación es **solo por eventos** y el conector es **consumidor**, nunca
+  productor obligatorio. Un despliegue sin `Nexo.Connectors` debe pasar la suite completa de integración.
+- **Los eventos de contexto tienen dos orígenes intercambiables.** `Nexo.MasterData` publica los mismos
+  contratos canónicos de catálogo (`masterdata.item.upserted`, `masterdata.uom.upserted`, …) que el conector
+  produce tras el ACL. Los consumidores (`WorkModel`, `Execution`, `Production`, `Scrap`) **no distinguen el
+  origen**: solo ven el evento canónico y su `origin_metadata` (ver [02-event-model.md](./02-event-model.md) y
+  **OD-11** en "Decisiones pendientes").
+- **`external_ref` es opcional en el modelo.** Un ítem local vive sin referencia externa; la columna existe pero
+  es nullable, y ninguna validación de dominio la exige (ver [03-data-schema.md](./03-data-schema.md)).
+- **Estado del conector = "No configurado".** No es *Error* ni *Degradado*: la ausencia de conector **no genera
+  alerta** en Rules Engine ni penaliza salud del tenant en el Control Plane
+  ([08-observability-ops.md](./08-observability-ops.md)).
+- **El costo se corre de lugar, no desaparece.** Lo que el conector ahorraba (alta de catálogos) pasa a ser
+  trabajo de implantación y superficie de producto en `Nexo.MasterData` — el costo de alcance registrado en
+  **ADR-T11** ([`master-data.md §7`](../specs/specs/master-data.md)).
+
 ---
 
 ## 2. API de Odoo
@@ -299,13 +365,18 @@ mantenimiento.
 
 ---
 
-## 3. Flujos de sincronización (MVP)
+## 3. Flujos de sincronización (solo en modo conectado)
 
-Dos planos, coherentes con [`integrations.md §5`](../specs/specs/integrations.md):
+> **Todo este apartado aplica únicamente si el tenant habilitó el conector.** En modo standalone (§1.4) no se
+> ejecuta ninguno de estos flujos y la plataforma opera igual.
+
+Tres planos, coherentes con [`integrations.md §5`](../specs/specs/integrations.md):
 
 - **Pull de contexto** (MO/Producto/UoM/Motivos): **programado/batch** (datos maestros).
 - **Push de hechos** (producción real y scrap): **event-driven**, disparado por **`RunClosed`**
   (`production.run.closed`), agregado por **cierre de corrida** (INT-01).
+- **Conciliación de alta tardía** (§3.5): se ejecuta **una vez**, cuando un tenant que venía operando
+  standalone conecta un ERP.
 
 ### 3.1 Pull de contexto (programado) — ERP → Nexo
 
@@ -317,7 +388,7 @@ sequenceDiagram
     participant SM as Secrets Manager
     participant Odoo as Odoo (MRP/Inventory)
     participant Bus as Backbone (MSK/MassTransit)
-    participant Core as Production / Scrap (tenant DB)
+    participant Core as MasterData / Execution (tenant DB)
 
     Sch->>Conn: Disparar pull (MO, Product, UoM, Reason) con watermark
     Conn->>SM: Resolver credencial (referencia -> secreto)
@@ -329,9 +400,9 @@ sequenceDiagram
         Odoo-->>Conn: Página de registros
         Conn->>Conn: Traducir a canónico (ACL + mapeo) + upsert por cross-reference
     end
-    Conn->>Bus: Publicar erp.mo.pulled / erp.catalog.updated (idempotente, dedup_key)
+    Conn->>Bus: Publicar erp.mo.pulled + masterdata.* (idempotente, dedup_key)
     Bus->>Core: Entregar eventos de contexto
-    Core->>Core: Upsert espejo local (external_ref) — ERP = fuente de verdad del contexto
+    Core->>Core: Upsert espejo local (external_ref) — ERP gobierna las entidades declaradas
     Conn->>Conn: Avanzar watermark + registrar Sync Job = Exitoso
 ```
 
@@ -342,8 +413,14 @@ sequenceDiagram
 - **Frecuencia** configurable por tenant/entidad (p. ej. MO cada 5–15 min; catálogos nocturnos). MVP: sin
   webhooks entrantes de Odoo (queda para V1 si el ERP lo soporta).
 - **Upsert idempotente por cross-reference** `(external_id ↔ canonical_id)`: re-pull no duplica.
-- **ERP = fuente de verdad del contexto** (IN-03, opción (a)): en conflicto de un campo de contexto, **gana
-  Odoo**; la ejecución real (cantidades) es de Nexo.
+- **Destino del pull:** los **catálogos** (producto, UoM, motivos) aterrizan en **`Nexo.MasterData`**, que es su
+  dueño canónico en ambos modos; la **MO** aterriza como **disparador** de `Nexo.Execution` / `Nexo.Production`.
+  El conector **no escribe** en las DB de los dominios: publica eventos canónicos y cada dueño hace su upsert.
+- **ERP = fuente de verdad del contexto** (IN-03, opción (a)), **por entidad y por tenant**: el gobierno se
+  declara catálogo por catálogo ([`master-data.md §4.2`](../specs/specs/master-data.md)). En un campo **gobernado
+  por el ERP**, en conflicto **gana Odoo**; los **campos propios de Nexo** (tiempo estándar, evidencia requerida,
+  tarifa de planta, política de lote/serie) **nunca son pisados** por una sincronización. La ejecución real
+  (cantidades, tiempos) es siempre de Nexo.
 
 ### 3.2 Push de producción real por cierre de corrida — Nexo → ERP
 
@@ -433,6 +510,63 @@ la imputación contable en Odoo se difiere a V1.
 - **Condiciones:** requiere Odoo **Enterprise** (módulo Quality) y el **feature flag** `odoo.quality.enabled`.
   Si está deshabilitado, el conector no ofrece estas operaciones (el `Manifest` marca la capacidad como
   `Optional`).
+
+### 3.5 Alta tardía del ERP: conciliación standalone → conectado
+
+El caso frecuente: un tenant arrancó **standalone**, cargó sus catálogos en `Nexo.MasterData`, produjo durante
+meses y **recién ahora** conecta Odoo. **No se puede tirar su master data, ni duplicarla, ni reescribir su
+histórico** ([`master-data.md §3.3.1`](../specs/specs/master-data.md)).
+
+> **Principio:** la conciliación es **un flujo de una sola vez, asistido y con confirmación humana**. El
+> emparejamiento automático se admite **solo por código exacto**; todo lo demás se propone, no se aplica.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant ADM as Administrador del tenant
+    participant Conn as Nexo.Connectors (job de conciliación)
+    participant Odoo as Odoo
+    participant MD as Nexo.MasterData (tenant DB)
+    participant XREF as connector_xref
+
+    ADM->>Conn: Habilita el conector y elige qué catálogos gobierna el ERP
+    Conn->>Odoo: search_read de catálogos gobernados (dry-run, sin escribir)
+    Odoo-->>Conn: Productos · UoM · insumos · motivos
+    Conn->>MD: Lee el catálogo local completo
+    Conn->>Conn: Matching en 3 grupos (código exacto · denominación similar · huérfanos)
+    Conn-->>ADM: Reporte de conciliación (simulación: qué vincula, crea, deja local)
+    ADM->>Conn: Confirma vínculos, resuelve dudosos, decide sobre huérfanos
+    Conn->>XREF: Fija (canonical_id ↔ external_id) por entidad
+    Conn->>MD: Cambia el gobierno del catálogo (campos gobernados pasan a solo lectura)
+    Note over MD,XREF: Registros y eventos históricos NO se modifican<br/>ni se recalculan métricas ya derivadas
+    Conn->>Conn: Activa crons de pull + consumers de push (modo conectado)
+```
+
+**Reglas de resolución** (implementación de [`master-data.md §3.3.1`](../specs/specs/master-data.md)):
+
+| Situación detectada | Resolución técnica |
+|---|---|
+| **Mismo código en ambos lados** | Vinculación automática: alta en `connector_xref`; el ERP pasa a gobernar sus campos; las **extensiones locales se conservan** |
+| **Códigos distintos, denominación equivalente** | Se **propone** el vínculo con score de similitud; requiere **confirmación humana explícita**. Nunca se aplica solo |
+| **Existe solo en Nexo** | Se conserva como **registro local no vinculado** (`external_ref = null`), marcado en la UI. Opciones: seguir local o crearlo en Odoo y vincular |
+| **Existe solo en Odoo** | Se importa como registro nuevo (`Espejo`) |
+| **Conflicto de valores en el vínculo** | El valor de Odoo rige **hacia adelante**; el previo queda en historial y el registro pasa a `Divergente` hasta resolverse en la bandeja de conflictos |
+
+**Garantías no negociables de la transición:**
+
+- **El histórico no se recalcula.** Las Ejecuciones, eventos y métricas ya derivadas **conservan la referencia
+  al ítem local con el que se operó**. Cambiar el gobierno de un catálogo cambia el comportamiento **hacia
+  adelante**, nunca el pasado ([`master-data.md` R6](../specs/specs/master-data.md)).
+- **Ejecuciones en curso no se interrumpen.** Un `Run` abierto sigue con la versión de Proceso y las referencias
+  de catálogo con las que arrancó.
+- **Sin borrado en cascada.** Si Odoo desactiva un ítem, Nexo lo **archiva**; un ítem referenciado por eventos
+  históricos **nunca se elimina**.
+- **La conciliación es simulable y reversible antes de confirmar.** El *dry-run* no escribe nada; solo tras la
+  confirmación se fijan `connector_xref` y el gobierno.
+- **Camino inverso (conectado → standalone).** Desconectar el conector **no degrada nada**: Nexo **retiene** todo
+  el master data espejado, los campos gobernados **vuelven a ser editables** y las `external_ref` se conservan
+  marcadas como históricas para poder reconectar. **Esta es la prueba de que el ERP es opcional**: si desconectarlo
+  dejara al sistema inoperante, sería obligatorio con otro nombre.
 
 ---
 
@@ -584,9 +718,11 @@ stateDiagram-v2
 - **Reconciliación programada:** pasada periódica que compara cantidades producidas/scrap de Nexo vs. la MO en
   Odoo y detecta divergencias (deriva). Frecuencia/granularidad y política auto vs. manual **pendientes**
   (pregunta abierta 3 de `integrations.md`; ver §7).
-- **Resolución de conflictos (IN-03, opción (a)):**
-  - **Contexto** (MO, catálogos, UoM, motivos, estados de planificación): **ERP = fuente de verdad**. En
-    conflicto, gana Odoo; Nexo re-sincroniza su espejo.
+- **Resolución de conflictos (IN-03, opción (a)) — solo en modo conectado:**
+  - **Contexto** (MO, catálogos, UoM, motivos, estados de planificación): **ERP = fuente de verdad** *para las
+    entidades declaradas como gobernadas por el ERP en ese tenant*. En conflicto, gana Odoo; Nexo re-sincroniza
+    su espejo. Las **extensiones locales** y los catálogos gobernados por Nexo (Procesos, jerarquía física,
+    personas operativas, turnos) **no se tocan** ([`master-data.md §4.2`](../specs/specs/master-data.md)).
   - **Ejecución real** (cantidades producidas, scrap, tiempos): **Nexo = fuente de verdad**. Se empuja a Odoo.
   - **Correcciones:** nunca edición destructiva; una corrección genera un **evento de ajuste** trazable
     ([`production.md §12 CB11`](../specs/specs/production.md), [`scrap.md §6`](../specs/specs/scrap.md)); si el
@@ -673,6 +809,9 @@ deja el conector **Sin credenciales/Degradado** y no procesa jobs (evita errores
 
 ### 6.3 Habilitación por feature flag y relación con el Marketplace
 
+- **Estado por defecto de un tenant: sin instancia.** El alta de tenant **no** crea ninguna instancia de
+  conector; el tenant nace en **modo standalone** (§1.4). Instalar el conector es una **acción deliberada** del
+  administrador, no un paso del provisioning.
 - **Marketplace (Control Plane):** el conector Odoo se publica en el catálogo global con su **manifiesto,
   versión, capacidades y requisitos de credenciales**. Instalarlo desde el Marketplace crea una **instancia
   configurada** en el tenant (credenciales + mapeos) — ver [`integrations.md §9`](../specs/specs/integrations.md)
@@ -716,6 +855,9 @@ flowchart LR
 | OD-06 | **Auth**: API key vs OAuth2/JWT según hosting; TTL de sesión/`uid` cacheado | §2.2 (ligado a IN-04) | Usuario de servicio + API key; OAuth a confirmar para Odoo.sh |
 | OD-07 | **Lote/Serie y multi-ERP simultáneo** (competencia por la misma entidad) | Pregunta abierta 4 de [`integrations.md`](../specs/specs/integrations.md) | Lotes bidireccionales en V1; MVP un ERP por entidad por tenant |
 | OD-08 | **SLA de sincronización** por plan (latencia/consistencia) y su medición | Pregunta abierta 8 de [`integrations.md`](../specs/specs/integrations.md) | Métricas OTel de latencia/backlog; objetivos por plan a definir con Enterprise |
+| OD-09 | **¿El conector Odoo entra al MVP o se corre a V1?** Con el ERP ya opcional, compite en prioridad con `Nexo.MasterData` | **INT-01 reencuadrada** (♻️ a revisar en el [tablero](../specs/open-questions-board.md)) · pregunta abierta 9 de [`integrations.md`](../specs/specs/integrations.md) | Diseño listo y congelado en este documento; **implementación detrás de feature flag** y priorizada **después** del mínimo viable de master data |
+| OD-10 | **Alcance de la conciliación de alta tardía** (§3.5): ¿emparejamiento por denominación con score, o solo por código exacto? ¿Qué catálogos son conciliables en el MVP? | Pregunta abierta 10 de [`integrations.md`](../specs/specs/integrations.md) · [`master-data.md §3.3.1`](../specs/specs/master-data.md) | Automático **solo por código exacto**; similitud como sugerencia con confirmación humana; MVP: ítems, UoM y motivos |
+| OD-11 | **Contrato de los eventos de catálogo**: ¿el conector publica `masterdata.*` (mismo contrato que `Nexo.MasterData`) o `erp.catalog.updated` y MasterData traduce? | §1.4 · [02-event-model.md](./02-event-model.md) | **Un solo contrato canónico** (`masterdata.*`) con el origen declarado en `origin_metadata`: los consumidores no distinguen el origen |
 
 > Las decisiones OD-0x se promueven a **ADR** en [00-tech-baseline.md](./00-tech-baseline.md) (si son técnicas)
 > o al [tablero de decisiones](../specs/open-questions-board.md) (si son de negocio) a medida que el diseño las

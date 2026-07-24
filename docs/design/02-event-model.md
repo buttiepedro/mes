@@ -1,8 +1,9 @@
 # 02 · Modelo de Eventos — Nexo (MVP)
 
-> **Documento:** `design/02-event-model.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-11
+> **Documento:** `design/02-event-model.md` · **Estado:** Borrador v0.2 · **Actualizado:** 2026-07-23
 > **Roles:** Software Architect · Tech Lead
 > **Relacionados:** [00-tech-baseline.md](./00-tech-baseline.md) · [01-multi-tenancy-connection.md](./01-multi-tenancy-connection.md) · [03-data-schema.md](./03-data-schema.md) · [04-service-contracts.md](./04-service-contracts.md) · [05-edge-agent.md](./05-edge-agent.md) · [06-odoo-connector.md](./06-odoo-connector.md) · [../specs/specs/data-ingestion.md](../specs/specs/data-ingestion.md) · [../specs/specs/traceability.md](../specs/specs/traceability.md) · [../specs/specs/architecture.md](../specs/specs/architecture.md) · [../specs/specs/integrations.md](../specs/specs/integrations.md)
+> **Modelo por capas (base funcional):** [../specs/specs/layered-architecture.md](../specs/specs/layered-architecture.md) · [../specs/specs/work-model.md](../specs/specs/work-model.md) · [../specs/specs/execution.md](../specs/specs/execution.md) · [../specs/specs/event-engine.md](../specs/specs/event-engine.md) · [../specs/specs/master-data.md](../specs/specs/master-data.md)
 
 ## Resumen ejecutivo
 
@@ -24,14 +25,33 @@ fiabilidad (con DDL ilustrativo), el catálogo de eventos del MVP y el enfoque d
 **No** implementa la aplicación. Las decisiones abiertas se registran en §8 y se promueven a ADR de [00](./00-tech-baseline.md)
 al cerrarse.
 
+**Alineación con el modelo por capas (2026-07-13).** El envelope se amplía para sostener lo que declara el
+[Motor de Eventos](../specs/specs/event-engine.md): los cuatro atributos irrenunciables del hecho —**fecha, origen, valor y
+evidencia**— y la **imputación** a **activo** (Capa 1), **tarea ejecutada** y **ejecución** (Capa 3). La **evidencia** entra
+como ciudadano de primera clase (referencia inmutable a Files/Media, nunca el binario), y el catálogo suma los eventos de las
+capas nuevas —Proceso, Ejecución, Tarea instanciada y Master Data— sin renombrar **ninguno** de los existentes:
+`nexo.production.registered` y compañía **siguen tal cual**, ahora imputables a una ejecución. El MVP soporta **ambos
+perfiles** (Lote y Proyecto) y **DAG completo**, y **ningún evento del MVP depende del conector ERP**, que es opcional
+([master-data.md](../specs/specs/master-data.md), [integrations.md](../specs/specs/integrations.md)).
+
 ---
 
 ## 1. Envelope del Evento canónico
 
-Todo evento de Nexo —sin importar su origen (`device` / `manual` / `api` / `file`) ni su dominio— viaja dentro de un
-**envelope común**. El envelope separa **metadatos de transporte y trazabilidad** (estables, conocidos por toda la
+Todo evento de Nexo —sin importar su origen (`device` / `vision` / `manual` / `system` / `api` / `file`) ni su dominio— viaja
+dentro de un **envelope común**. El envelope separa **metadatos de transporte y trazabilidad** (estables, conocidos por toda la
 plataforma) del **`payload`** (específico del `type`, gobernado por su propio JSON Schema). Esta separación permite que
 Ingestion, el broker, Traceability y los conectores operen sobre el envelope sin conocer el detalle de cada dominio.
+
+**Los cuatro atributos del hecho, mapeados al envelope** ([event-engine.md](../specs/specs/event-engine.md) §4.1):
+
+| Atributo funcional | Dónde vive en el envelope |
+|---|---|
+| **Fecha** (terna: ocurrencia · captura · ingesta) | `occurred_at` · `origin_metadata.captured_at` · `ingested_at` |
+| **Origen** (naturaleza · identidad de la fuente · cadena de custodia) | `source` · `device_id` / `operator_id` / `origin_metadata.component` · `origin_metadata` |
+| **Valor** (tipado, con unidad y confianza) | `payload` (gobernado por el JSON Schema del `type`) |
+| **Evidencia** (referencia, nunca el binario) | `evidence[]` |
+| *Imputación* (activo · tarea ejecutada · ejecución) | `context.asset` · `task_instance_id` · `execution_id` (+ `attribution`) |
 
 ### 1.1 Campos del envelope
 
@@ -42,14 +62,19 @@ Ingestion, el broker, Traceability y los conectores operen sobre el envelope sin
 | `type` | `string` | ✔ | Tipo canónico del evento: `nexo.<domain>.<event>`. | p. ej. `nexo.production.registered`. El segmento `<domain>` es la **categoría** que las specs llaman `type` (production/scrap/quality/downtime/reading/machine_event/custom) + dominios de plataforma (tenant/device/integration). Ver §1.4. |
 | `occurred_at` | `string` (date-time) | ✔ | **Tiempo de origen**: cuándo ocurrió el hecho en planta. | RFC 3339 / ISO-8601 UTC. Preferente para negocio; puede venir del PLC/OPC UA o sellarse en el agente ([data-ingestion.md](../specs/specs/data-ingestion.md) §8). |
 | `ingested_at` | `string` (date-time) | ✔ | **Tiempo de ingesta**: cuándo la nube admitió y persistió el evento. | Diagnóstico de latencia (`ingested_at − occurred_at`) y detección de tardíos. |
-| `source` | `enum` | ✔ | Procedencia: `device` \| `manual` \| `api` \| `file`. | Determina qué metadatos de origen acompañan ([traceability.md](../specs/specs/traceability.md) §3.1). |
-| `device_id` | `string` | — | Dispositivo emisor (si aplica). | Del mapeo de tagging ([devices.md](../specs/specs/devices.md)); requerido cuando `source=device`. |
-| `context` | `object` | — | Contexto físico: `site` / `line` / `asset`. | Planta → línea → máquina. Se completa por el contexto del dispositivo/operario. |
-| `operator_id` | `string` | — | Operario asociado. | Requerido cuando `source=manual`. |
-| `shift` | `string` | — | Turno resuelto por contexto temporal/planta. | Crítico para KPIs por turno ([production.md](../specs/specs/production.md) §7.3). |
-| `payload` | `object` | ✔ | Contenido normalizado del hecho, según `type`. | Gobernado por el JSON Schema específico del `type`+`schema_version` (§3). Unidades/escalas/códigos **ya convertidos**. |
+| `source` | `enum` | ✔ | Procedencia: `device` \| `vision` \| `manual` \| `system` \| `api` \| `file`. | Los **cuatro generadores** de [event-engine.md](../specs/specs/event-engine.md) §3.1 (sensor, visión, persona, **sistema**) + `api`/`file` por continuidad. Determina qué metadatos de origen acompañan ([traceability.md](../specs/specs/traceability.md) §3.1). Ampliación **aditiva** del enum (§3.3, DT-EV-13). |
+| `device_id` | `string` | — | Dispositivo emisor (si aplica). | Del mapeo de tagging ([devices.md](../specs/specs/devices.md)); requerido cuando `source=device` o `source=vision` (la cámara **es** un dispositivo). |
+| `context` | `object` | — | Contexto físico: `site` / `line` / `asset`. | Planta → línea → **activo**. Se completa por el contexto del dispositivo/operario. Regla de Capa 1: **ningún dato flota**; toda señal tiene activo dueño ([digital-twin.md](../specs/specs/digital-twin.md)). |
+| `operator_id` | `string` | — | Operario asociado. | Requerido cuando `source=manual`. Base de productividad por persona y de no repudio. |
+| `execution_id` | `string` | — | **Ejecución** (sabor Lote o Proyecto) a la que se imputa el hecho — Capa 3. | Contexto de agregación de casi todas las métricas ([execution.md](../specs/specs/execution.md) §2). Vacío en eventos de plataforma y en hechos aún **pendientes de imputación**. |
+| `task_instance_id` | `string` | — | **Tarea ejecutada** (tarea instanciada) a la que se imputa el hecho — Capa 3. | Unidad de imputación de tiempo, consumo, evidencia y calidad; es lo que hace medibles **progreso** y **espera** ([event-engine.md](../specs/specs/event-engine.md) §4.3). |
+| `attribution` | `object` | — | Cómo se resolvió la imputación: `method`, `confidence`, `pending`, `resolved_by`. | `method ∈ {explicit, active_execution, time_window, unassigned}`. Un evento **no imputado no se descarta**: viaja con `pending=true`, alimenta métricas de activo y va a la bandeja de imputación (E24 de [execution.md](../specs/specs/execution.md)). La reimputación es un evento de corrección, nunca una edición. |
+| `evidence` | `array` | — | **Referencias** a los artefactos probatorios del hecho. | El evento **no contiene** la evidencia: la **referencia**. El binario vive en Files/Media aislado por tenant ([event-engine.md](../specs/specs/event-engine.md) §5). Offline-first: se admite con `status=pending` y se materializa al sincronizar, **sin duplicar el evento**. |
+| `productive` | `boolean` | — | Si el hecho cuenta como **actividad productiva**. | Resuelto en la admisión según la configuración **versionada** por tenant/señal ([event-engine.md](../specs/specs/event-engine.md) §6). Base del cálculo de tiempos muertos; la versión de la política queda en `origin_metadata.productive_policy_version` para poder reproyectar. |
+| `shift` | `string` | — | Turno resuelto por contexto temporal/planta. | Crítico para KPIs por turno ([production.md](../specs/specs/production.md) §7.3). **Fijado en el evento**: un cambio posterior de calendario no reescribe la historia. |
+| `payload` | `object` | ✔ | Contenido normalizado del hecho (**el `valor`**), según `type`. | Gobernado por el JSON Schema específico del `type`+`schema_version` (§3). Unidades/escalas/códigos **ya convertidos**; toda magnitud lleva unidad del catálogo ([master-data.md](../specs/specs/master-data.md) §2.4) y los valores inferidos llevan `confidence`. |
 | `dedup_key` | `string` | ✔ | Clave determinística de deduplicación/idempotencia. | Derivada de atributos invariantes del hecho, **no** del momento de envío ([data-ingestion.md](../specs/specs/data-ingestion.md) §5.2). |
-| `origin_metadata` | `object` | — (recom.) | Linaje técnico: protocolo, firmware, calidad del dato, agente, offset de reloj, ref. al crudo. | Sustento de la evidencia de origen y del diagnóstico ([traceability.md](../specs/specs/traceability.md) §4.2). |
+| `origin_metadata` | `object` | — (recom.) | Linaje técnico: protocolo, firmware, calidad del dato, agente, offset de reloj, ref. al crudo, **componente y versión de lógica** (origen `system`), versión de la política de "productivo". | Sustento de la cadena de custodia y del diagnóstico ([traceability.md](../specs/specs/traceability.md) §4.2). El origen `system` **no es menos trazable**: declara qué componente y qué versión de lógica generó el hecho, para poder reproducirlo. |
 | `schema_version` | `integer` | ✔ | Versión **mayor** del contrato del `payload`/envelope. | Igual al `vN` del topic. Cambios aditivos no la incrementan; cambios rompientes sí (§3). |
 | `correlation_id` | `string` (UUID) | ✔ | Hilo que une eventos de una misma operación/flujo. | Se propaga por toda la cadena (Gateway→Ingestion→broker→dominios→ERP) y a logs/trazas OTel. |
 | `causation_id` | `string` (UUID) | — | `event_id` del evento que causó éste. | Habilita reconstruir árboles de causalidad; opcional pero recomendado en reacciones. |
@@ -62,6 +87,12 @@ Ingestion, el broker, Traceability y los conectores operen sobre el envelope sin
 > **Aislamiento por tenant.** El envelope siempre lleva `tenant_id`, pero el aislamiento **físico** lo garantiza la
 > DB-per-tenant y el particionamiento del topic ([01-multi-tenancy-connection.md](./01-multi-tenancy-connection.md)).
 > El `tenant_id` del envelope es el mecanismo de **enrutamiento y correlación**, no el control de acceso.
+
+> **Imputación, no invención.** `execution_id`/`task_instance_id` son **opcionales por diseño**: un contador de máquina puede
+> reportar piezas sin ejecución activa. En ese caso el evento se admite con `attribution.method="unassigned"` y
+> `pending=true`, alimenta las métricas de **activo** (utilización, silencio) y espera imputación diferida del supervisor.
+> **Nunca** se descarta ni se fuerza a una ejecución arbitraria: *es preferible un hecho sin dueño y visible que un hecho
+> asignado mal y silencioso* ([execution.md](../specs/specs/execution.md) §13.3).
 
 ### 1.2 JSON Schema del envelope (Draft 2020-12)
 
@@ -85,7 +116,9 @@ Ingestion, el broker, Traceability y los conectores operen sobre el envelope sin
                         "description": "nexo.<domain>.<event>" },
     "occurred_at":    { "type": "string", "format": "date-time" },
     "ingested_at":    { "type": "string", "format": "date-time" },
-    "source":         { "type": "string", "enum": ["device", "manual", "api", "file"] },
+    "source":         { "type": "string",
+                        "enum": ["device", "vision", "manual", "system", "api", "file"],
+                        "description": "Naturaleza del generador (event-engine.md §3.1)" },
     "device_id":      { "type": "string" },
     "context": {
       "type": "object",
@@ -93,10 +126,55 @@ Ingestion, el broker, Traceability y los conectores operen sobre el envelope sin
       "properties": {
         "site":  { "type": "string" },
         "line":  { "type": "string" },
-        "asset": { "type": "string" }
+        "asset": { "type": "string", "description": "Activo dueño del hecho (Capa 1)" }
       }
     },
     "operator_id":    { "type": "string" },
+    "execution_id":     { "type": "string",
+                        "description": "Ejecución (Lote|Proyecto) a la que se imputa el hecho — Capa 3" },
+    "task_instance_id": { "type": "string",
+                        "description": "Tarea ejecutada (tarea instanciada) a la que se imputa el hecho — Capa 3" },
+    "attribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Cómo se resolvió la imputación (event-engine.md §4.3)",
+      "properties": {
+        "method":      { "type": "string",
+                         "enum": ["explicit", "active_execution", "time_window", "unassigned"] },
+        "confidence":  { "type": "number", "minimum": 0, "maximum": 1 },
+        "pending":     { "type": "boolean", "default": false,
+                         "description": "true = a la bandeja de pendientes de imputación; no contamina KPIs de ejecución" },
+        "resolved_by": { "type": "string",
+                         "description": "Componente o usuario que imputó / reimputó" }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "description": "Referencias a los artefactos probatorios. El binario vive en Files/Media, aislado por tenant.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["evidence_id", "kind", "status"],
+        "properties": {
+          "evidence_id":     { "type": "string" },
+          "kind":            { "type": "string",
+                               "enum": ["photo", "file", "sensor_reading", "signature",
+                                        "video_frame", "structured_note"] },
+          "media_ref":       { "type": "string",
+                               "description": "Puntero inmutable en Files/Media (ausente mientras status=pending)" },
+          "media_type":      { "type": "string", "description": "MIME" },
+          "content_hash":    { "type": "string",
+                               "description": "Huella de integridad, p. ej. 'sha256:...'" },
+          "size_bytes":      { "type": "integer", "minimum": 0 },
+          "captured_at":     { "type": "string", "format": "date-time" },
+          "status":          { "type": "string", "enum": ["pending", "materialized", "verified"] },
+          "requirement_ref": { "type": "string",
+                               "description": "Requisito de evidencia de la Tarea (Capa 2) que satisface" }
+        }
+      }
+    },
+    "productive":     { "type": "boolean",
+                        "description": "Marca de actividad productiva resuelta en la admisión (event-engine.md §6)" },
     "shift":          { "type": "string" },
     "payload":        { "type": "object",
                         "description": "Contenido según type; validado por el schema específico" },
@@ -116,7 +194,15 @@ Ingestion, el broker, Traceability y los conectores operen sobre el envelope sin
         "data_quality": { "type": "string",
                           "enum": ["good", "suspect", "substituted", "interpolated", "out_of_range"] },
         "raw_ref":      { "type": "string",
-                          "description": "Referencia a la evidencia cruda (Files/Media o Event Store)" }
+                          "description": "Referencia a la evidencia cruda (Files/Media o Event Store)" },
+        "component":    { "type": "string",
+                          "description": "Componente emisor cuando source=system (p. ej. 'execution.dag_scheduler')" },
+        "logic_version":{ "type": "string",
+                          "description": "Versión de la lógica que derivó el hecho (reproducibilidad del origen system)" },
+        "productive_policy_version": { "type": "string",
+                          "description": "Versión de la configuración 'productivo' aplicada al resolver el flag" },
+        "model_version":{ "type": "string",
+                          "description": "Modelo/versión del detector cuando source=vision" }
       }
     },
     "schema_version": { "type": "integer", "minimum": 1 },
@@ -130,12 +216,28 @@ Ingestion, el broker, Traceability y los conectores operen sobre el envelope sin
       "then": { "required": ["device_id"] }
     },
     {
+      "if":   { "properties": { "source": { "const": "vision" } } },
+      "then": { "required": ["device_id"] }
+    },
+    {
       "if":   { "properties": { "source": { "const": "manual" } } },
       "then": { "required": ["operator_id"] }
+    },
+    {
+      "if":   { "properties": { "source": { "const": "system" } } },
+      "then": { "required": ["origin_metadata"] }
+    },
+    {
+      "if":   { "properties": { "task_instance_id": { "type": "string" } },
+                "required":   ["task_instance_id"] },
+      "then": { "required": ["execution_id"] }
     }
   ]
 }
 ```
+
+> **Invariante de imputación.** Una tarea instanciada **siempre** pertenece a una ejecución: si viaja `task_instance_id`,
+> `execution_id` es obligatorio. Lo inverso no aplica (hay hechos de ejecución sin tarea: creación, cierre, hito).
 
 > El `payload` se valida en **dos pasos**: (1) contra este envelope (`payload` es `object`), y (2) contra el JSON Schema
 > específico de `type`+`schema_version` resuelto en el registry (§3). Se evita un único mega-schema para no acoplar el
@@ -190,6 +292,84 @@ más específico, para poder distinguir eventos dentro del mismo dominio (p. ej.
 | **Tipo canónico** (envelope `type`) | `nexo.<domain>.<event>` | `nexo.production.registered` |
 | **Topic** (broker) | `nexo.<domain>.<event>.v<major>` | `nexo.production.registered.v1` |
 | **Contrato C#** (MassTransit) | `PascalCase` | `ProductionRegistered` |
+
+Los dominios del modelo por capas siguen **exactamente** la misma convención y se suman como `<domain>` nuevos:
+`process` (Capa 2), `execution` y `task` (Capa 3) y `masterdata` (catálogos). **Ningún `type` existente se renombra.**
+
+### 1.5 Ejemplo — `nexo.task.completed` (v1), perfil **Proyecto**, con evidencia e imputación
+
+Cierre de la tarea instanciada `P10 · Ensayo de estanqueidad` (que además es **hito**) de la ejecución de sabor Proyecto
+`PRY-2026-012`. Muestra los cuatro atributos del hecho y la imputación completa activo → tarea ejecutada → ejecución.
+
+```json
+{
+  "event_id": "019046f1-2c7b-7d12-a3e4-91b0c7d5e2a3",
+  "tenant_id": "9c3b1e77-2d4a-4b8f-9e1a-6f0c2d3b4a55",
+  "type": "nexo.task.completed",
+  "occurred_at": "2026-07-21T11:42:07.120Z",
+  "ingested_at": "2026-07-21T12:05:44.310Z",
+  "source": "manual",
+  "operator_id": "OP-1042",
+  "context": { "site": "OBRA-TORRE-CALLAO", "asset": "FRENTE-VIDRIADO-N3" },
+  "execution_id": "PRY-2026-012",
+  "task_instance_id": "PRY-2026-012/P10#1",
+  "attribution": { "method": "explicit", "pending": false, "resolved_by": "OP-1042" },
+  "productive": true,
+  "payload": {
+    "process_ref": { "process_id": "PRC-OBRA-FV", "version": "1.0" },
+    "task_ref": "P10",
+    "outcome": "completed",
+    "is_milestone": true,
+    "completion_criterion": "quality_gate",
+    "worked_time_s": 25200,
+    "progress_pct": 100,
+    "quality_gate": { "inspection_id": "INS-2026-0914", "result": "pass" }
+  },
+  "evidence": [
+    {
+      "evidence_id": "EV-9f21a",
+      "kind": "file",
+      "media_ref": "files://9c3b1e77/2026/07/EV-9f21a.pdf",
+      "media_type": "application/pdf",
+      "content_hash": "sha256:3b1f...c7a2",
+      "size_bytes": 481233,
+      "captured_at": "2026-07-21T11:40:55Z",
+      "status": "materialized",
+      "requirement_ref": "PRC-OBRA-FV@1.0/P10/EV-protocolo-ensayo"
+    },
+    {
+      "evidence_id": "EV-9f21b",
+      "kind": "photo",
+      "captured_at": "2026-07-21T11:41:30Z",
+      "status": "pending",
+      "requirement_ref": "PRC-OBRA-FV@1.0/P10/EV-foto-junta"
+    }
+  ],
+  "dedup_key": "PRY-2026-012|P10#1|completed|2026-07-21T11:42:07Z",
+  "origin_metadata": {
+    "protocol": "manual",
+    "agent_id": "tablet-obra-07",
+    "captured_at": "2026-07-21T11:42:07.200Z",
+    "clock_offset_ms": -140,
+    "data_quality": "good",
+    "productive_policy_version": "2026.07-r1"
+  },
+  "schema_version": 1,
+  "correlation_id": "019046f1-2c7b-7d12-a3e4-91b0c7d5e200"
+}
+```
+
+**Lectura del ejemplo:**
+
+- La foto viaja `status: "pending"`: la tablet estaba **sin red** al capturarla. El artefacto se sube después y se completa
+  con `nexo.task.evidence_attached` (`causation_id` = este `event_id`), **sin duplicar** el cierre —misma `dedup_key`—.
+  Mientras tanto la tarea queda con **deuda de evidencia**, que es una métrica en sí misma
+  ([event-engine.md](../specs/specs/event-engine.md) §5.4). Si la política de la tarea fuera *obligatoria bloqueante*, el
+  cierre se rechaza en `Nexo.Execution` (422) y este evento **no existe**.
+- `occurred_at` ≠ `ingested_at` por 23 minutos (store-and-forward). El hecho se computa **cuando ocurrió**, y las métricas
+  de la ventana afectada se recalculan ([event-engine.md](../specs/specs/event-engine.md) §8).
+- El mismo envelope, con `execution_id` de sabor Lote y sin `is_milestone`, sirve al perfil repetitivo: **un solo contrato
+  para los dos perfiles**.
 
 ---
 
@@ -286,6 +466,12 @@ retención larga** ([traceability.md](../specs/specs/traceability.md)): reconstr
 | Cambiar tipo/semántica de un campo | ❌ No | Rompiente; nuevo topic `v(N+1)` |
 | Volver **requerido** un campo antes opcional | ❌ No | Rompiente; nuevo topic `v(N+1)` |
 
+> **La ampliación del envelope del modelo por capas es aditiva.** `execution_id`, `task_instance_id`, `attribution`,
+> `evidence` y `productive` son **opcionales**: los consumidores viejos los ignoran y **no se incrementa `schema_version`**
+> ni se crean topics nuevos para los eventos ya existentes. El único punto sensible es la **ampliación del enum `source`**
+> (`system`, `vision`): se rige por la fila "Ampliar un `enum`" y exige que los consumidores toleren valores desconocidos
+> (DT-EV-13).
+
 ### 3.4 Migración de una versión rompiente (`vN` → `v(N+1)`)
 
 1. Publicar el schema `v(N+1)` en el registry.
@@ -335,6 +521,10 @@ esquema aislada. El costo (más topics) es asumible en MSK Serverless.
 | `nexo.production.run_closed.v1` | `tenant_id \| order_id` | Cierre después de todos los registros de la corrida |
 | `nexo.downtime.started.v1` / `ended.v1` | `tenant_id \| asset_id` | Inicio/fin ordenados por máquina |
 | `nexo.device.status_changed.v1` | `tenant_id \| device_id` | Transiciones de estado ordenadas |
+| `nexo.execution.*.v1` | `tenant_id \| execution_id` | Ciclo de vida, consumo y avance ordenados por ejecución |
+| `nexo.task.*.v1` | `tenant_id \| execution_id` | **La tarea se co-ordena con su ejecución**, no consigo misma: habilitada→iniciada→terminada y el recálculo de progreso dependen de ese orden común |
+| `nexo.process.version_published.v1` | `tenant_id \| process_id` | Versiones de un Proceso en secuencia (una sola vigente) |
+| `nexo.masterdata.*.v1` | `tenant_id \| catalog` | *Upserts* del mismo catálogo en secuencia (idempotencia por código) |
 | `nexo.tenant.provisioned.v1` | `tenant_id` | Evento de plataforma (topic global) |
 
 > **Orden global.** Kafka **no** garantiza orden entre particiones. Los dominios que necesiten línea de tiempo global
@@ -370,6 +560,7 @@ flowchart TB
 | Clase de topic | Retención en Kafka (MVP) | Fuente de verdad de largo plazo |
 |---|---|---|
 | Eventos de dominio (`production`, `scrap`, `quality`, `downtime`) | 30 días | **Event Store** por tenant (inmutable, retención larga) — [traceability.md](../specs/specs/traceability.md) |
+| Eventos del modelo por capas (`process`, `execution`, `task`, `masterdata`) | 30 días | **Event Store** por tenant. Una ejecución de sabor **Proyecto** puede durar meses: el estado **nunca** se reconstruye desde Kafka, siempre desde el Event Store |
 | `reading.ingested` (alta frecuencia) | 7 días | **Time-series** del tenant (append-only, downsampling) — [scalability.md](../specs/specs/scalability.md) §5 |
 | Eventos de plataforma (`tenant`, `device`, `integration`) | 30 días | Control Plane DB / Audit |
 
@@ -515,7 +706,8 @@ CREATE INDEX ix_processed_dedup ON processed_events (consumer, tenant_id, dedup_
 
 ## 6. Catálogo canónico de eventos (MVP)
 
-Esta tabla es la **única fuente de verdad** de los nombres de evento del MVP: todo otro documento (en especial
+Las dos tablas de esta sección (**§6** eventos de plataforma y de dominio ya vigentes; **§6.1** eventos del modelo por capas)
+son, en conjunto, la **única fuente de verdad** de los nombres de evento del MVP: todo otro documento (en especial
 [04-service-contracts.md](./04-service-contracts.md)) **referencia** estos mismos nombres, no los redefine. **`type (wire)`**
 = valor del envelope `type` (`nexo.<domain>.<event>`, minúscula, `snake_case`, verbo en pasado); **`topic`** = el topic
 Kafka/MSK (`type` + `.v<major>`); **Evento (contrato C#)** = clase de integración PascalCase mapeada 1:1 al `type`. Todos
@@ -550,8 +742,71 @@ viajan en el envelope de §1.
   y `DeviceStatusChanged` según semántica ([downtime.md](../specs/specs/downtime.md), [devices.md](../specs/specs/devices.md)).
 - **Correcciones** (nunca edición destructiva): eventos compensatorios/de anexo con `causation_id` al `event_id` original,
   p. ej. `nexo.production.adjustment_recorded.v1` ([traceability.md](../specs/specs/traceability.md) §4.1, [production.md](../specs/specs/production.md) CB11).
+- **Estos nombres NO cambian con el modelo por capas.** `nexo.production.registered` y el resto de la tabla se mantienen tal
+  cual; lo único que ganan es **contexto**: cuando el hecho ocurre dentro de una ejecución, viajan con `execution_id` y
+  `task_instance_id` en el envelope (§1.1). El reencuadre es de **posicionamiento conceptual, no una demolición**
+  ([work-model.md](../specs/specs/work-model.md) §10.5).
 
-### 6.1 Contratos .NET ilustrativos
+### 6.1 Catálogo del modelo por capas — Proceso · Ejecución · Tarea · Master Data
+
+Mismo envelope, misma convención `nexo.<domain>.<event>`, mismo formato de tabla. Cubre las capas incorporadas el
+2026-07-13: **Capa 2** ([work-model.md](../specs/specs/work-model.md)), **Capa 3** ([execution.md](../specs/specs/execution.md))
+y los catálogos propios ([master-data.md](../specs/specs/master-data.md)). Aplica a **ambos perfiles** (Lote y Proyecto).
+
+| Evento (contrato C#) | type (wire) | topic | Productor | Consumidores | Clave de partición | Payload resumido |
+|---|---|---|---|---|---|---|
+| **ProcessVersionPublished** | `nexo.process.version_published` | `nexo.process.version_published.v1` | WorkModel | Execution (habilita instanciar), Dashboards, Traceability, Audit | `tenant_id\|process_id` | `process_id`, `version`, `profile{repetitivo\|proyecto}`, `task_count`, `critical_path_s`, `published_by`, `diff_summary` |
+| **ProcessVersionSuspended** | `nexo.process.version_suspended` | `nexo.process.version_suspended.v1` | WorkModel | Execution (bloquea nuevas instanciaciones; las en curso siguen), Notifications, Audit | `tenant_id\|process_id` | `process_id`, `version`, `reason`, `suspended_by` |
+| **ExecutionCreated** | `nexo.execution.created` | `nexo.execution.created.v1` | Execution | Dashboards, Traceability, Notifications, Connectors *(si está activo)* | `tenant_id\|execution_id` | `execution_id`, `code`, `flavor{lote\|proyecto}`, `process_ref{process_id,version}`, `trigger{type,ref}`, `target{product_sku,qty,uom}?`, `deliverable?`, `customer_ref?`, `due_at?` |
+| **ExecutionScheduled** | `nexo.execution.scheduled` | `nexo.execution.scheduled.v1` | Execution | Dashboards (baseline y ruta crítica), Traceability | `tenant_id\|execution_id` | `execution_id`, `baseline_id`, `planned_start`, `planned_end`, `frozen_version`, `task_instances`, `critical_path[]` |
+| **ExecutionReleased** | `nexo.execution.released` | `nexo.execution.released.v1` | Execution | Dashboards, Notifications (planta habilitada) | `tenant_id\|execution_id` | `execution_id`, `released_by`, `shortages[]` |
+| **ExecutionStarted** | `nexo.execution.started` | `nexo.execution.started.v1` | Execution | Dashboards, Traceability, Downtime (abre ventana), Connectors *(opcional)* | `tenant_id\|execution_id` | `execution_id`, `started_at`, `first_task_ref`, `assets[]` |
+| **ExecutionPaused** | `nexo.execution.paused` | `nexo.execution.paused.v1` | Execution | Downtime (parada/tiempo no productivo), Dashboards, Rules | `tenant_id\|execution_id` | `execution_id`, `paused_at`, `cause{parada\|fin_turno\|bloqueo\|decisión}`, `reason_code?`, `by` |
+| **ExecutionResumed** | `nexo.execution.resumed` | `nexo.execution.resumed.v1` | Execution | Downtime (cierra el intervalo), Dashboards | `tenant_id\|execution_id` | `execution_id`, `resumed_at`, `paused_duration_s`, `by` |
+| **ExecutionRescheduled** | `nexo.execution.rescheduled` | `nexo.execution.rescheduled.v1` | Execution | Dashboards (desvío de cronograma), Traceability, Audit | `tenant_id\|execution_id` | `execution_id`, `new_baseline_id`, `previous_baseline_id`, `kind{fechas\|alcance\|recursos\|split\|migración}`, `reason`, `by` |
+| **ExecutionInputConsumed** | `nexo.execution.input_consumed` | `nexo.execution.input_consumed.v1` | Execution | Traceability (genealogía), Dashboards, Connectors *(opcional)* | `tenant_id\|execution_id` | `execution_id`, `task_instance_id`, `item_code`, `qty`, `uom`, `lot?`, `method{declarado\|backflush\|báscula\|escaneo}`, `deviation_pct?` |
+| **ExecutionMilestoneReached** | `nexo.execution.milestone_reached` | `nexo.execution.milestone_reached.v1` | Execution | Dashboards (hitos), Notifications, Traceability | `tenant_id\|execution_id` | `execution_id`, `task_instance_id`, `milestone_ref`, `committed_at`, `reached_at`, `delay_s` |
+| **ExecutionImputationPending** | `nexo.execution.imputation_pending` | `nexo.execution.imputation_pending.v1` | Execution | Dashboards (bandeja), Notifications, Traceability | `tenant_id\|asset_id` | `source_event_id`, `asset_id`, `occurred_at`, `candidates[]`, `reason{sin_ejecución_activa\|ambiguo}` |
+| **ExecutionClosed** | `nexo.execution.closed` | `nexo.execution.closed.v1` | Execution | Dashboards, Traceability, **Connectors *(si está activo)***, Notifications | `tenant_id\|execution_id` | `execution_id`, `flavor`, `mode{normal\|parcial\|forzado\|vencimiento}`, `totals{good,nonconforming,scrap}?`, `progress_pct`, `worked_time_s`, `closed_by`, `reason?` |
+| **ExecutionCancelled** | `nexo.execution.cancelled` | `nexo.execution.cancelled.v1` | Execution | Dashboards, Traceability, Connectors *(opcional)* | `tenant_id\|execution_id` | `execution_id`, `reason`, `incurred{worked_time_s,inputs[]}`, `cancelled_by` |
+| **TaskEnabled** | `nexo.task.enabled` | `nexo.task.enabled.v1` | Execution (origen `system`) | **Dashboards (cola y espera)**, Notifications, Traceability | `tenant_id\|execution_id` | `execution_id`, `task_instance_id`, `task_ref`, `enabled_at`, `predecessors[]`, `lag_expired_at?`, `required_role`, `resource_ref?` |
+| **TaskAssigned** | `nexo.task.assigned` | `nexo.task.assigned.v1` | Execution | Dashboards (productividad), Notifications | `tenant_id\|execution_id` | `execution_id`, `task_instance_id`, `mode{individual\|equipo\|rol\|automático\|externo}`, `assignees[]`, `role`, `by` |
+| **TaskStarted** | `nexo.task.started` | `nexo.task.started.v1` | Execution | Dashboards (reloj, espera = start − enabled), Traceability, Downtime | `tenant_id\|execution_id` | `execution_id`, `task_instance_id`, `task_ref`, `started_at`, `operator_id`, `asset_id?`, `wait_s` |
+| **TaskPaused** | `nexo.task.paused` | `nexo.task.paused.v1` | Execution | Dashboards, Downtime | `tenant_id\|execution_id` | `execution_id`, `task_instance_id`, `paused_at`, `cause` |
+| **TaskResumed** | `nexo.task.resumed` | `nexo.task.resumed.v1` | Execution | Dashboards, Downtime | `tenant_id\|execution_id` | `execution_id`, `task_instance_id`, `resumed_at`, `paused_duration_s` |
+| **TaskProgressReported** | `nexo.task.progress_reported` | `nexo.task.progress_reported.v1` | Execution | Dashboards (progreso), Traceability | `tenant_id\|execution_id` | `execution_id`, `task_instance_id`, `progress_pct`, `method{declarado\|cantidad\|checklist\|tiempo\|señal}`, `qty?`, `uom?` |
+| **TaskBlocked** | `nexo.task.blocked` | `nexo.task.blocked.v1` | Execution | **Rules, Notifications**, Dashboards (cuellos de botella), Downtime | `tenant_id\|execution_id` | `execution_id`, `task_instance_id`, `blocked_at`, `cause{insumo\|recurso\|aprobación\|calidad}`, `reason_code`, `by` |
+| **TaskUnblocked** | `nexo.task.unblocked` | `nexo.task.unblocked.v1` | Execution | Dashboards (duración del bloqueo), Notifications | `tenant_id\|execution_id` | `execution_id`, `task_instance_id`, `unblocked_at`, `blocked_duration_s`, `resolution` |
+| **TaskCompleted** | `nexo.task.completed` | `nexo.task.completed.v1` | Execution | **Dashboards (progreso ponderado)**, Traceability, Quality, Connectors *(opcional)* | `tenant_id\|execution_id` | `execution_id`, `task_instance_id`, `task_ref`, `outcome{completed\|forced}`, `is_milestone`, `completion_criterion`, `worked_time_s`, `quality_gate?`, `evidence_debt?` |
+| **TaskSkipped** | `nexo.task.skipped` | `nexo.task.skipped.v1` | Execution | Dashboards (recalcula denominador), Audit, Notifications | `tenant_id\|execution_id` | `execution_id`, `task_instance_id`, `kind{opcional\|condicional\|obligatoria}`, `reason`, `authorized_by` |
+| **TaskEvidenceAttached** | `nexo.task.evidence_attached` | `nexo.task.evidence_attached.v1` | Execution | **Traceability**, Files/Media, Dashboards (deuda de evidencia) | `tenant_id\|execution_id` | `execution_id`, `task_instance_id`, `evidence[]` (ver §1.1), `satisfies_requirement`, `late` |
+| **MasterDataRecordUpserted** | `nexo.masterdata.record_upserted` | `nexo.masterdata.record_upserted.v1` | MasterData | WorkModel, Execution, Ingestion (caché de catálogos), Dashboards, Traceability | `tenant_id\|catalog` | `catalog{uom\|item\|person\|role\|customer}`, `record_id`, `code`, `change{created\|updated}`, `governance{nexo\|erp}`, `external_ref?` |
+| **MasterDataRecordArchived** | `nexo.masterdata.record_archived` | `nexo.masterdata.record_archived.v1` | MasterData | WorkModel (advertencia al publicar), Execution, Dashboards, Audit | `tenant_id\|catalog` | `catalog`, `record_id`, `code`, `reason`, `impact{events,executions}` |
+| **MasterDataImportCompleted** | `nexo.masterdata.import_completed` | `nexo.masterdata.import_completed.v1` | MasterData | Notifications, Audit, Observability | `tenant_id\|import_job_id` | `import_job_id`, `catalog`, `file_ref`, `created`, `updated`, `rejected`, `by` |
+
+**Notas del catálogo por capas:**
+
+- **`nexo.task.enabled` lo emite el sistema** (`source=system`, con `origin_metadata.component` y `logic_version`). Es el
+  evento que fija el instante *"el trabajo estaba listo para empezar"*: **sin él la espera no es medible** y el KPI de
+  **cuello de botella** queda degradado ([event-engine.md](../specs/specs/event-engine.md) §7.3.1). Se emite igual en ambos
+  perfiles y con **DAG completo** (precedencias Fin→Inicio + demora, decisión 2026-07-13).
+- **La cantidad producida del perfil Lote NO se duplica.** Sigue viajando en `nexo.production.registered` (§6), ahora con
+  `execution_id`/`task_instance_id`. No existe `nexo.execution.quantity_registered`: eso sería renombrar un contrato vigente.
+- **Perfil Proyecto:** `milestone_reached` y `rescheduled` (con baseline) son sus eventos distintivos. **No se calcula OEE**
+  para ejecuciones de sabor Proyecto (E23 de [execution.md](../specs/specs/execution.md)); los consumidores deben **ocultar**
+  la métrica, no publicarla en cero.
+- **ERP opcional (INT-01 a revisar).** Connectors aparece como consumidor **entre paréntesis** en toda la tabla: si el
+  conector no está configurado, **ningún flujo se degrada**. Ninguna capa publica hacia el ERP de forma obligatoria.
+- **Costo → V1.** `input_consumed` viaja **sin valorizar** (cantidad + unidad + lote). La master data del MVP no incluye
+  tarifas ni centros de costo, así que la métrica de costo real se muestra **no disponible con motivo explícito**, nunca a
+  medias ([master-data.md](../specs/specs/master-data.md) §7.3, [event-engine.md](../specs/specs/event-engine.md) §7.6.2).
+- **Correcciones y reimputación:** nunca edición destructiva. Una reimputación (el supervisor mueve un hecho a otra tarea) se
+  publica como evento de corrección con `causation_id` al original y `attribution.resolved_by`, y dispara **recálculo de
+  ambas** ventanas ([event-engine.md](../specs/specs/event-engine.md) §8).
+- **Volumen:** una ejecución de Proyecto genera decenas de eventos en meses; una de Lote, miles en horas. La clave
+  `tenant_id|execution_id` reparte ambos casos sin puntos calientes por dominio.
+
+### 6.2 Contratos .NET ilustrativos
 
 ```csharp
 // Nexo.Contracts — envelope compartido (metadatos de transporte/trazabilidad)
@@ -569,13 +824,34 @@ public sealed record EventEnvelope<TPayload>(
     string?         DeviceId       = null,
     EventContext?   Context        = null,   // site / line / asset
     string?         OperatorId     = null,
+    string?         ExecutionId    = null,   // Capa 3 — ejecución (lote | proyecto)
+    string?         TaskInstanceId = null,   // Capa 3 — tarea ejecutada
+    Attribution?    Attribution    = null,   // cómo se resolvió la imputación
+    IReadOnlyList<EvidenceRef>? Evidence = null,
+    bool?           Productive     = null,
     string?         Shift          = null,
     OriginMetadata? OriginMetadata = null,
     Guid?           CausationId    = null);
 
 public sealed record EventContext(string? Site, string? Line, string? Asset);
 
-// Nexo.Contracts.Production — payload del evento de integración
+// Imputación: explicit | active_execution | time_window | unassigned
+public sealed record Attribution(string Method, bool Pending = false,
+                                 double? Confidence = null, string? ResolvedBy = null);
+
+// La evidencia NO viaja en el evento: viaja su referencia inmutable + su huella.
+public sealed record EvidenceRef(
+    string          EvidenceId,
+    string          Kind,            // photo | file | sensor_reading | signature | video_frame | structured_note
+    string          Status,          // pending | materialized | verified
+    string?         MediaRef        = null,
+    string?         MediaType       = null,
+    string?         ContentHash     = null,
+    long?           SizeBytes       = null,
+    DateTimeOffset? CapturedAt      = null,
+    string?         RequirementRef  = null);
+
+// Nexo.Contracts.Production — payload del evento de integración (SIN CAMBIOS de nombre)
 public sealed record ProductionRegistered(
     string OrderId,
     string RunId,
@@ -586,6 +862,38 @@ public sealed record ProductionRegistered(
     long?  CounterStart = null,
     long?  CounterEnd   = null,
     bool   CounterRollover = false);
+
+// Nexo.Contracts.Execution — Capa 3, sirve a los DOS perfiles (lote | proyecto)
+public sealed record ExecutionStarted(
+    string          ExecutionId,
+    string          Code,
+    string          Flavor,          // lote | proyecto
+    ProcessRef      ProcessRef,      // versión CONGELADA al programar
+    DateTimeOffset  StartedAt,
+    IReadOnlyList<string> Assets);
+
+public sealed record ProcessRef(string ProcessId, string Version);
+
+// Emitido por el SISTEMA al cumplirse las precedencias del DAG: sin él, la espera no se mide.
+public sealed record TaskEnabled(
+    string          ExecutionId,
+    string          TaskInstanceId,
+    string          TaskRef,
+    DateTimeOffset  EnabledAt,
+    IReadOnlyList<string> Predecessors,
+    string          RequiredRole,
+    string?         ResourceRef    = null,
+    DateTimeOffset? LagExpiredAt   = null);
+
+public sealed record TaskCompleted(
+    string          ExecutionId,
+    string          TaskInstanceId,
+    string          TaskRef,
+    string          Outcome,         // completed | forced
+    bool            IsMilestone,
+    string          CompletionCriterion,
+    long            WorkedTimeSeconds,
+    bool            EvidenceDebt = false);
 ```
 
 > **gRPC/`.proto`:** los eventos usan **JSON** (no Protobuf). El `.proto` se reserva para el **sync interno**
@@ -721,9 +1029,20 @@ public sealed class ProductionRegisteredConsumer(
 | **DT-EV-06** | Nivel de encadenamiento criptográfico del evento | `sequence`/hash-chain por partición vs. sellado externo (RFC-3161) | Hash-chain por partición en Event Store; detalle en [07-security.md](./07-security.md) ([traceability.md](../specs/specs/traceability.md) PA-3) |
 | **DT-EV-07** | Granularidad de `machine_event` en el envelope | ¿Categoría propia o subsumida en downtime/device? | Subsumida en `downtime.*` / `device.status_changed` en MVP; promover a categoría propia si V1 lo exige |
 | **DT-EV-08** | Muestreo de `reading` hacia Traceability | 100% del crudo vs. muestra/resumen (costo vs. trazabilidad) | Muestra/resumen configurable por tag ([traceability.md](../specs/specs/traceability.md) PA-1) |
+| **DT-EV-09** | ¿Cuándo se emite `nexo.task.enabled`? | Instanciación completa del DAG al programar vs. perezosa ([execution.md](../specs/specs/execution.md) PA-1). Afecta volumen de eventos y la medición de espera | **Instanciación completa al programar** + emisión de `enabled` cuando cada tarea cumple precedencias y vence el lag; revisar si un proyecto de ~200 tareas lo justifica |
+| **DT-EV-10** | Evidencia offline: referencia `pending` vs. evento de anexo | El artefacto puede subir horas después (store-and-forward del edge) | Admitir el hecho con `evidence[].status=pending` y completarlo con `nexo.task.evidence_attached` (`causation_id` al original, **misma `dedup_key` del hecho**); nunca duplicar el evento de cierre |
+| **DT-EV-11** | ¿`productive` viaja resuelto en el envelope o se deriva en la Capa 4? | La marca es configurable por tenant/señal y su cambio **altera retroactivamente** los tiempos muertos ([event-engine.md](../specs/specs/event-engine.md) PA-3) | Viaja **resuelto en la admisión** + `origin_metadata.productive_policy_version`, para poder reproyectar la serie histórica de forma determinista |
+| **DT-EV-12** | Granularidad de los eventos de master data | Uno por catálogo (`item_upserted`, `uom_upserted`…) vs. genérico con discriminador | **Genérico** `nexo.masterdata.record_upserted` con `catalog` en el payload; abrir por catálogo solo si los consumidores divergen (MOD-17) |
+| **DT-EV-13** | Ampliación del enum `source` con `system` y `vision` | Es un cambio **aditivo de enum** (§3.3, "⚠️ depende") sobre un contrato ya publicado | Se amplía dentro de **`v1`**: los consumidores deben tolerar valores desconocidos (regla de tolerancia documentada). No se abre `v2` |
+| **DT-EV-14** | Imputación por inferencia en las métricas | ¿Se admiten métricas con eventos imputados por ventana temporal, o requieren confirmación humana? ([event-engine.md](../specs/specs/event-engine.md) PA-8) | El envelope **siempre** declara `attribution.method`; el filtrado por método es decisión del consumidor (Dashboards), no del contrato |
 
 > Estas preguntas se resuelven **a medida que el diseño las necesita**. Al cerrarse, se promueven a **ADR** en
 > [00-tech-baseline.md](./00-tech-baseline.md) §9.
+
+> **Ya no son preguntas (decisiones del 2026-07-13).** El MVP soporta **ambos perfiles** (Lote y Proyecto) y **DAG completo**
+> —por eso `nexo.task.enabled` y `nexo.execution.milestone_reached` entran al MVP y no a V1—; la **master data mínima es sin
+> costo** —por eso `input_consumed` no lleva valorización—; y el **ERP es opcional** —por eso ningún evento del catálogo tiene
+> a Connectors como consumidor obligatorio—.
 
 ---
 
@@ -738,5 +1057,10 @@ public sealed class ProductionRegisteredConsumer(
 - Pipeline de ingesta, validación, orden y reproceso: [../specs/specs/data-ingestion.md](../specs/specs/data-ingestion.md)
 - Event Store inmutable, genealogía y cadena de trazabilidad: [../specs/specs/traceability.md](../specs/specs/traceability.md)
 - Arquitectura, evento canónico y backbone: [../specs/specs/architecture.md](../specs/specs/architecture.md)
+- Modelo de 4 capas y ERP como conector lateral opcional: [../specs/specs/layered-architecture.md](../specs/specs/layered-architecture.md)
+- Contrato funcional del hecho (fecha/origen/valor/evidencia), imputación y métricas derivadas: [../specs/specs/event-engine.md](../specs/specs/event-engine.md)
+- Proceso, Tarea, DAG y versionado (Capa 2): [../specs/specs/work-model.md](../specs/specs/work-model.md)
+- Ejecución (Lote/Proyecto), tareas instanciadas y ciclo de vida (Capa 3): [../specs/specs/execution.md](../specs/specs/execution.md)
+- Catálogos propios, modos standalone/conectado e importador CSV: [../specs/specs/master-data.md](../specs/specs/master-data.md)
 - Integraciones y patrones de sync/idempotencia: [../specs/specs/integrations.md](../specs/specs/integrations.md)
 - Escala, particionamiento, time-series y retención: [../specs/specs/scalability.md](../specs/specs/scalability.md)

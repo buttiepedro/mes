@@ -1,9 +1,10 @@
 # 04 · Contratos de Servicio — Nexo (MVP)
 
-> **Documento:** `design/04-service-contracts.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-11
+> **Documento:** `design/04-service-contracts.md` · **Estado:** Borrador v0.2 · **Actualizado:** 2026-07-23
 > **Roles:** Software Architect · Tech Lead
 > **Relacionados:** [00-tech-baseline.md](./00-tech-baseline.md) · [01-multi-tenancy-connection.md](./01-multi-tenancy-connection.md) · [02-event-model.md](./02-event-model.md) · [03-data-schema.md](./03-data-schema.md) · [05-edge-agent.md](./05-edge-agent.md) · [06-odoo-connector.md](./06-odoo-connector.md) · [07-security.md](./07-security.md)
 > **Base funcional:** [../specs/specs/architecture.md](../specs/specs/architecture.md) · [../specs/specs/modules.md](../specs/specs/modules.md) · [../specs/specs/production.md](../specs/specs/production.md)
+> **Modelo por capas:** [../specs/specs/layered-architecture.md](../specs/specs/layered-architecture.md) · [../specs/specs/work-model.md](../specs/specs/work-model.md) · [../specs/specs/execution.md](../specs/specs/execution.md) · [../specs/specs/event-engine.md](../specs/specs/event-engine.md) · [../specs/specs/master-data.md](../specs/specs/master-data.md)
 
 ## Resumen ejecutivo
 
@@ -23,6 +24,13 @@ Todos los contratos asumen los invariantes del baseline: **multi-tenant DB-per-t
 JWT (nunca del payload; ver [01-multi-tenancy-connection.md](./01-multi-tenancy-connection.md) y
 [../specs/specs/multi-tenancy.md](../specs/specs/multi-tenancy.md)), **Clean Architecture** por servicio, **Duende
 IdentityServer** para AuthN/AuthZ (scopes + roles), y **Outbox/Inbox** para publicación/consumo consistente de eventos.
+
+**Novedades del modelo por capas (2026-07-13).** Se incorporan tres servicios por tenant que materializan las capas 2 y 3 y
+los catálogos propios: **`Nexo.MasterData`** (§2.5), **`Nexo.WorkModel`** (§2.6) y **`Nexo.Execution`** (§2.7). Con ellos, el
+MVP soporta **ambos perfiles** —Lote y Proyecto— con **DAG completo** de tareas, y el conector **Odoo/ERP pasa a ser
+explícitamente OPCIONAL**: ningún servicio del MVP lo tiene como dependencia, ni síncrona ni asíncrona. El flujo
+end-to-end se documenta ahora en **dos versiones** (§4.1 repetitivo/Lote y §4.2 proyecto), y la del perfil proyecto
+**no toca el ERP en ningún paso**.
 
 ---
 
@@ -95,6 +103,9 @@ es un **código de error de dominio estable** (no cambia entre versiones); `erro
 
 | Scope | Otorga |
 |---|---|
+| `nexo.masterdata.read` / `.write` / `.admin` | Consultar catálogos / ABM de catálogos / importación CSV, archivado y cambio de gobierno. |
+| `nexo.workmodel.read` / `.write` / `.publish` | Ver procesos / editar borradores (tareas, DAG, tiempos) / **publicar o suspender** una versión (SoD respecto de quien la diseña). |
+| `nexo.execution.read` / `.write` / `.admin` | Ver ejecuciones y tareas / operar (tomar, avanzar, adjuntar evidencia, cerrar tarea) / **programar, liberar, reprogramar, omitir, cierre forzado, reabrir**. |
 | `nexo.production.read` / `.write` | Leer / registrar-modificar producción (órdenes, corridas, registros). |
 | `nexo.quality.read` / `.write` | Calidad (inspecciones, disposición). |
 | `nexo.scrap.read` / `.write` | Scrap. |
@@ -163,6 +174,14 @@ Envelope canónico (campos clave, ver [02-event-model.md](./02-event-model.md)):
 - **Dos capas de eventos:** (a) **canónicos normalizados** que publica Ingestion (routing por `type`: `production`,
   `scrap`, `quality`, `downtime`, `reading`, `machine_event`, `custom`); (b) **eventos de dominio/negocio** que publican
   los dominios (`nexo.production.registered`, `nexo.quality.disposition_set`, …). Traceability consume prácticamente todo.
+- **Familias del modelo por capas** (catálogo en [02-event-model.md](./02-event-model.md) §6.1): `nexo.process.*` (Capa 2),
+  `nexo.execution.*` y `nexo.task.*` (Capa 3) y `nexo.masterdata.*` (catálogos). Clave de partición
+  `tenant_id|execution_id` para ejecución **y** tarea. **Ningún evento existente se renombra**: `nexo.production.registered`
+  sigue siendo el hecho de cantidad del perfil Lote, ahora con `execution_id`/`task_instance_id` en el envelope.
+- **Imputación en el envelope:** todo evento productivo viaja con `execution_id`/`task_instance_id` y `attribution`; si no se
+  puede imputar, `attribution.pending=true` y va a la bandeja de `Nexo.Execution` (`GET /executions/pending-imputation`).
+- **Evidencia:** el evento porta **referencias** (`evidence[]`), nunca binarios. El artefacto vive en Files/Media aislado por
+  tenant y puede materializarse más tarde (`nexo.task.evidence_attached`).
 
 ---
 
@@ -171,6 +190,17 @@ Envelope canónico (campos clave, ver [02-event-model.md](./02-event-model.md)):
 Cada subsección: **responsabilidad** · **REST (OpenAPI resumido)** · **gRPC interno (.proto)** si aplica · **eventos
 publicados/consumidos**. La clasificación tenant/compartido/global sigue
 [../specs/specs/architecture.md](../specs/specs/architecture.md) §3 y [../specs/specs/multi-tenancy.md](../specs/specs/multi-tenancy.md) §7.
+
+**Ubicación en el modelo de 4 capas** ([layered-architecture.md](../specs/specs/layered-architecture.md)):
+
+| Capa | Pregunta que responde | Servicios |
+|---|---|---|
+| **1 · Física — Gemelo digital** | ¿Qué existe y qué está midiendo? | `Nexo.Devices` (§2.4) · `Nexo.Ingestion` (§2.3) |
+| **2 · Modelo de trabajo** | ¿Cómo se hace el trabajo? (plantilla) | **`Nexo.WorkModel` (§2.6)** |
+| **3 · Ejecución** | ¿Qué se está haciendo ahora? (instancia) | **`Nexo.Execution` (§2.7)** · `Nexo.Production` (§2.8, perfil repetitivo) · `Nexo.Quality` · `Nexo.Scrap` · `Nexo.Downtime` |
+| **4 · Motor de eventos** | ¿Qué pasó realmente? (hechos + métricas) | `Nexo.Traceability` (§2.12) · `Nexo.Dashboards` (§2.14) |
+| *Transversal* | Catálogos, identidad, tenancy, entrega | **`Nexo.MasterData` (§2.5)** · `Nexo.Tenancy` · `Nexo.Identity` · `Nexo.Notifications` |
+| *Lateral — **OPCIONAL*** | Acelerador, **no es capa** | `Nexo.Connectors` (§2.13, Odoo/ERP) |
 
 ---
 
@@ -207,7 +237,7 @@ paths:
                 subdomain:  { type: string, description: "empresa → empresa.nexo.app" }
                 plan_code:  { type: string, enum: [starter, pro, enterprise] }
                 region:     { type: string, example: sa-east-1 }
-                admin_email:{ type: string, format: email }
+                admin_email: { type: string, format: email }
       responses:
         "202": { description: Aprovisionamiento encolado, devuelve tenant en estado 'Aprovisionando' }
         "409": { description: Subdominio en uso, $ref: '#/components/responses/Problem' }
@@ -548,7 +578,781 @@ message AssetContext { string site = 1; string line = 2; string asset = 3; strin
 
 ---
 
-### 2.5 Production — `Nexo.Production` (por tenant) · **caso estrella del MVP**
+### 2.5 Master Data — `Nexo.MasterData` (por tenant)
+
+**Responsabilidad:** los **catálogos propios** que hacen posible operar **sin ERP**: unidades de medida, **ítems**
+(producto e insumo son **roles del mismo ítem**, no catálogos separados), personas y roles operativos, y clientes
+**mínimos**. Gobierna el ciclo de vida del dato maestro (Local · Espejo · Vinculado · Divergente · Archivado), la
+**precedencia por catálogo** (Nexo vs. ERP) y el **importador CSV acotado** con validación en dos etapas y **simulación
+previa obligatoria** (ver [../specs/specs/master-data.md](../specs/specs/master-data.md)).
+
+**Recorte explícito del MVP (decisión 2026-07-13 — master data mínima *sin costo*):** **no** hay tarifas, **no** hay
+centros de costo, **no** hay costo unitario ni stock, compras o facturación → **V1**. **No** hay entidad *Pedido*: el
+compromiso comercial (cliente, entregable, fecha comprometida) es **atributo de la Ejecución de perfil proyecto** (§2.7).
+Los **Procesos** son master data nativa de Nexo pero viven en `Nexo.WorkModel` (§2.6), no acá.
+
+#### REST (OpenAPI resumido)
+
+```yaml
+openapi: 3.1.0
+info: { title: Nexo Master Data API, version: "1.0" }
+servers: [{ url: https://api.nexo.app/masterdata/v1 }]
+security: [{ bearer: [] }]
+paths:
+  /uoms:
+    get:
+      summary: Catálogo de unidades de medida (semilla SI + conteo + tiempo, extensible)
+      security: [{ bearer: [ nexo.masterdata.read ] }]
+      parameters:
+        - { name: magnitude, in: query, schema: { type: string, example: masa } }
+      responses: { "200": { description: Página de unidades } }
+    post:
+      summary: Alta de unidad (solo conversión DENTRO de la misma magnitud)
+      security: [{ bearer: [ nexo.masterdata.write ] }]
+      parameters: [{ name: Idempotency-Key, in: header, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, symbol, magnitude, factor_to_base]
+              properties:
+                code:           { type: string }
+                symbol:         { type: string }
+                magnitude:      { type: string, enum: [masa, longitud, volumen, tiempo, conteo, superficie] }
+                factor_to_base: { type: number, exclusiveMinimum: 0 }
+                decimals:       { type: integer, default: 3 }
+      responses:
+        "201": { description: Unidad creada }
+        "409": { description: "Código duplicado o factor ya usado por eventos (se versiona, no se edita)" }
+  /items:
+    get:
+      summary: Ítems (filtro por rol producto/insumo, familia, estado)
+      security: [{ bearer: [ nexo.masterdata.read ] }]
+      parameters:
+        - { name: role,   in: query, schema: { type: string, enum: [producto, insumo, ambos] } }
+        - { name: status, in: query, schema: { type: string, enum: [Activo, Discontinuado, Archivado] } }
+        - { name: q,      in: query, schema: { type: string, description: "búsqueda por código/denominación" } }
+        - { name: limit,  in: query, schema: { type: integer, maximum: 200, default: 50 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses: { "200": { description: Página de ítems } }
+    post:
+      summary: "Alta de ítem — piso absoluto: código + denominación + unidad base"
+      security: [{ bearer: [ nexo.masterdata.write ] }]
+      parameters: [{ name: Idempotency-Key, in: header, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name, base_uom]
+              properties:
+                code:        { type: string }
+                name:        { type: string }
+                base_uom:    { type: string }
+                roles:       { type: array, items: { type: string, enum: [producto, insumo] } }
+                family:      { type: string, nullable: true }
+                tracking:    { type: string, enum: [ninguno, lote, serie], default: ninguno }
+                ideal_cycle_time_s: { type: number, nullable: true, description: "perfil repetitivo" }
+                default_process_id: { type: string, nullable: true }
+      responses:
+        "201": { description: "Ítem creado; emite nexo.masterdata.record_upserted" }
+        "409": { description: "Código duplicado en el tenant", $ref: '#/components/responses/Problem' }
+  /items/{itemId}:archive:
+    post:
+      summary: Baja LÓGICA con reporte de impacto (nunca borrado físico si hay eventos que lo referencian)
+      security: [{ bearer: [ nexo.masterdata.admin ] }]
+      responses:
+        "200": { description: "Archivado; devuelve impacto {eventos, ejecuciones, procesos}" }
+        "409": { description: "Referenciado por procesos publicados; requiere sustituto", $ref: '#/components/responses/Problem' }
+  /people:
+    get:
+      summary: Personas operativas (legajo, rol/es, alcance planta/línea, calendario)
+      security: [{ bearer: [ nexo.masterdata.read ] }]
+      responses: { "200": { description: Página de personas } }
+    post:
+      summary: Alta de persona operativa (SIN tarifa en el MVP — costo a V1)
+      security: [{ bearer: [ nexo.masterdata.write ] }]
+      responses: { "201": { description: Persona creada } }
+  /roles:
+    get:
+      summary: Roles operativos a los que una Tarea puede asignarse (canónicos + propios del tenant)
+      security: [{ bearer: [ nexo.masterdata.read ] }]
+      responses: { "200": { description: Lista de roles } }
+  /customers:
+    get:
+      summary: Clientes (mínimos — sin condiciones comerciales, sin precios, sin facturación)
+      security: [{ bearer: [ nexo.masterdata.read ] }]
+      responses: { "200": { description: Página de clientes } }
+    post:
+      summary: Alta de cliente mínimo (código + razón social + contacto)
+      security: [{ bearer: [ nexo.masterdata.write ] }]
+      responses: { "201": { description: Cliente creado } }
+  /import-templates/{catalog}:
+    get:
+      summary: Plantilla CSV del catálogo (columnas, obligatoriedad, tipos, ejemplos)
+      security: [{ bearer: [ nexo.masterdata.read ] }]
+      parameters:
+        - { name: catalog, in: path, required: true, schema: { type: string, enum: [uoms, items, people, customers] } }
+      responses: { "200": { description: "text/csv con encabezados y fila de ejemplo" } }
+  /imports:csv:
+    post:
+      summary: "Importar CSV — SIEMPRE en seco: valida (estructural + semántica) y SIMULA; no aplica nada"
+      description: >
+        Alcance MVP del importador: unidades, ítems, personas y clientes. Los Procesos se cargan por interfaz, no por CSV.
+        Orden de dependencias impuesto por el asistente: unidades → ítems → personas → clientes.
+      security: [{ bearer: [ nexo.masterdata.admin ] }]
+      parameters:
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, format: uuid } }
+        - { name: catalog, in: query, required: true, schema: { type: string, enum: [uoms, items, people, customers] } }
+      requestBody:
+        content: { multipart/form-data: { schema: { type: object, properties: { file: { type: string, format: binary } } } } }
+      responses:
+        "202": { description: "Import job creado en estado 'Simulado'" }
+        "422": { description: "Archivo ilegible o catálogo desconocido", $ref: '#/components/responses/Problem' }
+  /imports/{jobId}:
+    get:
+      summary: Resultado de la simulación — a crear / a actualizar / a rechazar, con motivo por fila y columna
+      security: [{ bearer: [ nexo.masterdata.admin ] }]
+      responses:
+        "200":
+          description: >
+            { status: Simulado|Aplicado|Descartado, to_create, to_update, to_reject,
+              rows: [{ line, code, action, errors: [{ column, code, message, suggestion }] }] }
+  /imports/{jobId}:confirm:
+    post:
+      summary: Aplicar el upsert por CLAVE NATURAL (reimportar el mismo archivo actualiza, no duplica)
+      security: [{ bearer: [ nexo.masterdata.admin ] }]
+      responses:
+        "200": { description: "Aplicado; emite nexo.masterdata.import_completed. Archivo conservado como evidencia" }
+        "409": { description: "Job ya aplicado o vencido", $ref: '#/components/responses/Problem' }
+  /governance:
+    get:
+      summary: Quién gobierna cada catálogo en este tenant (Nexo | ERP | ERP+extensiones | no usado)
+      security: [{ bearer: [ nexo.masterdata.read ] }]
+      responses: { "200": { description: "Matriz de gobierno + última sincronización + divergencias pendientes" } }
+components:
+  securitySchemes: { bearer: { type: http, scheme: bearer, bearerFormat: JWT } }
+  responses:
+    Problem: { description: Error RFC7807, content: { application/problem+json: { schema: { type: object } } } }
+```
+
+> **Un ABM que deja editar un campo que la sincronización va a pisar es peor que un ABM bloqueado.** `GET /governance` existe
+> para que la UI pueda decir, sin ambigüedad, qué campo es editable y por qué. En modo **standalone** (el nominal del MVP)
+> todos los catálogos están gobernados por Nexo y todo es editable.
+
+#### gRPC interno (.proto) — servidor consumido por WorkModel, Execution e Ingestion
+
+```proto
+syntax = "proto3";
+package nexo.masterdata.v1;
+
+service MasterDataCatalog {
+  // Execution/Ingestion: resolver un ítem y su unidad base al imputar consumo o cantidad.
+  rpc ResolveItem (ResolveItemRequest) returns (Item);
+  // WorkModel: validar en bloque las referencias de una versión ANTES de publicar (W5/G9).
+  rpc ValidateCatalogRefs (ValidateCatalogRefsRequest) returns (ValidateCatalogRefsReply);
+  // Conversión dentro de la MISMA magnitud (nunca entre magnitudes).
+  rpc ConvertUom (ConvertUomRequest) returns (ConvertUomReply);
+}
+message ResolveItemRequest { string tenant_id = 1; string code = 2; }
+message Item {
+  string item_id = 1; string code = 2; string name = 3;
+  string base_uom = 4; string tracking = 5;   // ninguno | lote | serie
+  string status = 6;                          // Activo | Discontinuado | Archivado
+  repeated string roles = 7;                  // producto | insumo
+}
+message ValidateCatalogRefsRequest {
+  string tenant_id = 1;
+  repeated string item_codes = 2;
+  repeated string uom_codes  = 3;
+  repeated string role_codes = 4;
+}
+message ValidateCatalogRefsReply {
+  bool ok = 1;
+  repeated string missing = 2;    // referencias inexistentes -> bloquea publicación
+  repeated string archived = 3;   // referencias archivadas   -> advertencia + sustituto
+}
+message ConvertUomRequest { string tenant_id = 1; string from_uom = 2; string to_uom = 3; double value = 4; }
+message ConvertUomReply   { double value = 1; string uom = 2; }
+```
+
+#### Eventos
+
+| Dirección | Evento | Consumidores / Notas |
+|---|---|---|
+| **Publica** | `nexo.masterdata.record_upserted.v1` | WorkModel, Execution, Ingestion (invalidan caché de catálogos), Dashboards, Traceability |
+| **Publica** | `nexo.masterdata.record_archived.v1` | WorkModel (advertencia al publicar), Execution, Audit |
+| **Publica** | `nexo.masterdata.import_completed.v1` | Notifications, Audit, Observability |
+| **Consume** | `nexo.tenant.provisioned.v1` | **Semilla** del tenant: unidades estándar + roles canónicos + motivos base (idempotente) |
+| **Consume** | `nexo.integration.order_imported.v1` y catálogos del conector *(solo si el ERP está activo)* | *Upsert* por referencia externa; **jamás** pisa las extensiones propias de Nexo (R2 de master-data.md) |
+
+---
+
+### 2.6 Work Model — `Nexo.WorkModel` (por tenant) · **Capa 2**
+
+**Responsabilidad:** la **biblioteca de Procesos versionados**: Tareas, **DAG** de precedencias, tiempos estándar/estimado,
+insumos por tarea, rol responsable, **evidencia requerida**, **criterio de terminación**, punto de control de calidad, peso
+de avance y marca de **hito**. Publica versiones **inmutables** y calcula **ruta crítica** y **carga de trabajo** (dos
+magnitudes distintas que se muestran con nombres distintos). Un Proceso tiene **perfil** `repetitivo | proyecto` y **el
+mismo modelo sirve a los dos** (ver [../specs/specs/work-model.md](../specs/specs/work-model.md)).
+
+**Alcance MVP (decisión 2026-07-13):** **DAG completo** con precedencias **Fin→Inicio + demora (lag)**; SS/FF y
+condicionales → V1. **El Proceso nunca se terceriza al ERP**: aun con conector activo, el BOM/ruta solo puede **sugerir** un
+borrador que exige revisión y publicación humanas.
+
+#### REST (OpenAPI resumido)
+
+```yaml
+openapi: 3.1.0
+info: { title: Nexo Work Model API, version: "1.0" }
+servers: [{ url: https://api.nexo.app/workmodel/v1 }]
+security: [{ bearer: [] }]
+paths:
+  /processes:
+    get:
+      summary: Biblioteca de procesos (filtros por perfil, familia, estado de la versión vigente)
+      security: [{ bearer: [ nexo.workmodel.read ] }]
+      parameters:
+        - { name: profile, in: query, schema: { type: string, enum: [repetitivo, proyecto] } }
+        - { name: status,  in: query, schema: { type: string, enum: [Borrador,EnRevision,Publicada,Suspendida,Obsoleta] } }
+        - { name: q,       in: query, schema: { type: string } }
+      responses: { "200": { description: Página de procesos } }
+    post:
+      summary: Crear proceso (identidad estable a través de todas sus versiones)
+      security: [{ bearer: [ nexo.workmodel.write ] }]
+      parameters: [{ name: Idempotency-Key, in: header, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name, profile, output]
+              properties:
+                code:    { type: string }
+                name:    { type: string }
+                profile: { type: string, enum: [repetitivo, proyecto] }
+                output:
+                  type: object
+                  description: "Producto/SKU (repetitivo) o entregable (proyecto) + unidad de salida"
+                  properties:
+                    item_code:  { type: string, nullable: true }
+                    deliverable: { type: string, nullable: true }
+                    uom:        { type: string }
+                evidence_policy: { type: string, enum: [obligatoria, recomendada, opcional, ninguna], default: recomendada }
+      responses:
+        "201": { description: Proceso creado con versión 1.0 en Borrador }
+        "409": { description: "Código de proceso duplicado (W13)", $ref: '#/components/responses/Problem' }
+  /processes/{processId}/versions:
+    get:
+      summary: Historial de versiones (con ejecuciones que usaron cada una)
+      security: [{ bearer: [ nexo.workmodel.read ] }]
+      responses: { "200": { description: Lista de versiones } }
+    post:
+      summary: Derivar una nueva versión Borrador desde la publicada (mayor | menor | editorial)
+      security: [{ bearer: [ nexo.workmodel.write ] }]
+      responses: { "201": { description: Borrador derivado } }
+  /versions/{versionId}/tasks:
+    post:
+      summary: Agregar tarea al borrador
+      security: [{ bearer: [ nexo.workmodel.write ] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name, role_code, completion_criterion, mandatory]
+              properties:
+                code:      { type: string }
+                name:      { type: string }
+                role_code: { type: string, description: "rol primero; persona nominada es excepción" }
+                estimated_duration_s: { type: integer }
+                standard_duration_s:  { type: integer, nullable: true }
+                weight:    { type: number, nullable: true, description: "si falta, se deriva del tiempo estándar" }
+                mandatory: { type: boolean }
+                parallelizable: { type: boolean, default: false }
+                repeatable:     { type: boolean, default: false }
+                is_milestone:   { type: boolean, default: false, description: "hito — típico del perfil proyecto" }
+                resource_requirement: { type: string, nullable: true, description: "tipo de activo (Capa 1)" }
+                completion_criterion:
+                  type: object
+                  properties:
+                    kind: { type: string, enum: [declarativo, cantidad, medicion, señal, evidencia, calidad, aprobacion, compuesto] }
+                    spec: { type: object }
+                evidence_requirements:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      kind:   { type: string, enum: [photo, file, sensor_reading, signature, video_frame, structured_note] }
+                      policy: { type: string, enum: [bloqueante, diferida, recomendada, ninguna] }
+                      min_count: { type: integer, default: 1 }
+                inputs:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      item_code:   { type: string }
+                      qty:         { type: number }
+                      uom:         { type: string }
+                      basis:       { type: string, enum: [fija, proporcional] }
+                      tolerance_pct: { type: number }
+                      tracking_required: { type: boolean }
+      responses:
+        "201": { description: Tarea agregada }
+        "409": { description: "La versión no es Borrador (W10)", $ref: '#/components/responses/Problem' }
+  /versions/{versionId}/graph:
+    put:
+      summary: Definir precedencias del DAG (MVP - Fin→Inicio + lag positivo)
+      security: [{ bearer: [ nexo.workmodel.write ] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                edges:
+                  type: array
+                  items:
+                    type: object
+                    required: [from_task, to_task]
+                    properties:
+                      from_task: { type: string }
+                      to_task:   { type: string }
+                      kind:      { type: string, enum: [FS], default: FS }
+                      lag_s:     { type: integer, default: 0 }
+      responses:
+        "200": { description: Grafo actualizado }
+        "422": { description: "Ciclo detectado (G1) — se devuelve el ciclo señalado", $ref: '#/components/responses/Problem' }
+  /versions/{versionId}:validate:
+    post:
+      summary: Correr validaciones G1–G10 / W1–W15 sin publicar (validación en vivo del editor)
+      security: [{ bearer: [ nexo.workmodel.read ] }]
+      responses: { "200": { description: "{ ok, blocking[], warnings[] }" } }
+  /versions/{versionId}:publish:
+    post:
+      summary: Publicar versión (se vuelve INMUTABLE y ejecutable; una sola vigente por proceso)
+      description: "Requiere G1–G10 OK. Emite nexo.process.version_published; a partir de acá Execution puede instanciarla."
+      security: [{ bearer: [ nexo.workmodel.publish ] }]
+      parameters: [{ name: Idempotency-Key, in: header, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200": { description: Versión publicada }
+        "422": { description: "Validaciones bloqueantes (ciclo, tarea sin criterio, insumo inexistente)", $ref: '#/components/responses/Problem' }
+  /versions/{versionId}:suspend:
+    post:
+      summary: Suspender versión vigente (las ejecuciones en curso CONTINÚAN; no se pueden crear nuevas)
+      security: [{ bearer: [ nexo.workmodel.publish ] }]
+      responses: { "200": { description: Versión suspendida } }
+  /versions/{versionId}/critical-path:
+    get:
+      summary: Ruta crítica y carga de trabajo (magnitudes distintas, nombradas distinto)
+      security: [{ bearer: [ nexo.workmodel.read ] }]
+      responses:
+        "200": { description: "{ critical_path: [task_ref], duration_s, workload_s, weights_normalized }" }
+  /processes/{processId}:duplicate:
+    post:
+      summary: Duplicar proceso como borrador (mecanismo de reutilización del MVP - copia, no referencia)
+      security: [{ bearer: [ nexo.workmodel.write ] }]
+      responses: { "201": { description: Proceso duplicado } }
+components:
+  securitySchemes: { bearer: { type: http, scheme: bearer, bearerFormat: JWT } }
+  responses:
+    Problem: { description: Error RFC7807, content: { application/problem+json: { schema: { type: object } } } }
+```
+
+#### gRPC interno (.proto) — servidor consumido por Execution
+
+```proto
+syntax = "proto3";
+package nexo.workmodel.v1;
+
+service ProcessCatalog {
+  // Execution al programar: trae la versión PUBLICADA para congelarla e instanciar su DAG.
+  rpc GetPublishedVersion (GetPublishedVersionRequest) returns (ProcessVersion);
+  // Execution: relee la versión CONGELADA de una ejecución en curso (aunque ya sea Obsoleta).
+  rpc GetVersion (GetVersionRequest) returns (ProcessVersion);
+}
+message GetPublishedVersionRequest { string tenant_id = 1; string process_id = 2; }
+message GetVersionRequest          { string tenant_id = 1; string process_id = 2; string version = 3; }
+
+message ProcessVersion {
+  string process_id = 1; string version = 2; string profile = 3;   // repetitivo | proyecto
+  string status = 4;                                               // Publicada | Suspendida | Obsoleta
+  repeated TaskDefinition tasks = 5;
+  repeated Edge edges = 6;
+  int64  critical_path_s = 7; int64 workload_s = 8;
+}
+message TaskDefinition {
+  string code = 1; string name = 2; string role_code = 3;
+  int64  standard_duration_s = 4; double weight = 5;
+  bool   mandatory = 6; bool parallelizable = 7; bool repeatable = 8; bool is_milestone = 9;
+  string completion_criterion_kind = 10;
+  repeated EvidenceRequirement evidence = 11;
+  repeated InputRequirement inputs = 12;
+  string resource_requirement = 13;
+  string quality_gate_ref = 14;
+}
+message EvidenceRequirement { string kind = 1; string policy = 2; int32 min_count = 3; }
+message InputRequirement    { string item_code = 1; double qty = 2; string uom = 3; string basis = 4;
+                              double tolerance_pct = 5; bool tracking_required = 6; }
+message Edge { string from_task = 1; string to_task = 2; string kind = 3; int64 lag_s = 4; }
+```
+
+#### Eventos
+
+| Dirección | Evento | Consumidores / Notas |
+|---|---|---|
+| **Publica** | `nexo.process.version_published.v1` | **Execution** (habilita instanciar), Dashboards, Traceability, Audit |
+| **Publica** | `nexo.process.version_suspended.v1` | Execution (bloquea nuevas instanciaciones), Notifications, Audit |
+| **Consume** | `nexo.masterdata.record_archived.v1` | Advierte en el editor y exige sustituto para nuevas versiones (CB8) |
+| **Consume** | `nexo.execution.closed.v1` | Realimentación de **tiempo real → propuesta de tiempo estándar**. En el MVP solo se acumula la muestra; la propuesta asistida es **V1** ([work-model.md](../specs/specs/work-model.md) PA-4) |
+
+---
+
+### 2.7 Execution — `Nexo.Execution` (por tenant) · **Capa 3 · motor único de los dos perfiles**
+
+**Responsabilidad:** la **Ejecución (Run)** —instancia viva de una versión de Proceso congelada— en sus dos sabores,
+**Lote** y **Proyecto**, con **un solo esqueleto**: instanciación del DAG, **habilitación de tareas** (evento de origen
+`system`), asignación, reloj (inicio/pausa/reanudación/fin), avance parcial, **consumo real** de insumos, **evidencia**,
+bloqueos, hitos, excepciones y cierre. Es también el dueño de la **bandeja de pendientes de imputación**: el hecho que no
+encuentra tarea **no se descarta ni se fuerza** (ver [../specs/specs/execution.md](../specs/specs/execution.md)).
+
+**Decisiones que lo definen (2026-07-13):** ambos perfiles en el MVP; DAG completo; el **pedido/compromiso** (cliente,
+entregable, fecha comprometida, hitos) es **atributo de la ejecución de perfil proyecto**, no una entidad de master data; y
+**toda ejecución nace, vive y se cierra sin ERP** — el conector, si existe, solo recibe copia de los hechos.
+
+> **Relación con `Nexo.Production` (§2.8).** La Ejecución **generaliza** a `production_run`: una corrida es una Ejecución de
+> sabor Lote, disparada por una orden, con una sola cadena de tareas y un solo recurso. En el MVP conviven —Production
+> conserva orden, cantidades, turnos y OEE; Execution aporta tareas, DAG, evidencia y los dos perfiles— y la cantidad
+> producida se sigue declarando con `nexo.production.registered`. La convergencia formal es **SC-11**.
+
+#### REST (OpenAPI resumido)
+
+```yaml
+openapi: 3.1.0
+info: { title: Nexo Execution API, version: "1.0" }
+servers: [{ url: https://api.nexo.app/execution/v1 }]
+security: [{ bearer: [] }]
+paths:
+  /executions:
+    get:
+      summary: Listar ejecuciones (un solo listado para los dos sabores)
+      security: [{ bearer: [ nexo.execution.read ] }]
+      parameters:
+        - { name: flavor, in: query, schema: { type: string, enum: [lote, proyecto] } }
+        - { name: status, in: query, schema: { type: string, enum: [Borrador,Programada,Liberada,EnCurso,Pausada,Bloqueada,Reprogramada,Completada,Cerrada,Verificada,Sincronizada,Archivada,Cancelada,Reabierta] } }
+        - { name: process_id,  in: query, schema: { type: string } }
+        - { name: due_before,  in: query, schema: { type: string, format: date-time } }
+        - { name: limit,  in: query, schema: { type: integer, maximum: 200, default: 50 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses: { "200": { description: Página de ejecuciones } }
+    post:
+      summary: Crear ejecución (Borrador) a partir de un disparador
+      description: >
+        El SABOR deriva del perfil del Proceso, no del disparador (E3). Un disparador incompatible se rechaza con 422.
+        El disparador manual está SIEMPRE disponible, incluso sin ERP.
+      security: [{ bearer: [ nexo.execution.admin ] }]
+      parameters: [{ name: Idempotency-Key, in: header, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [process_id, trigger]
+              properties:
+                process_id: { type: string }
+                trigger:
+                  type: object
+                  required: [type]
+                  properties:
+                    type: { type: string, enum: [orden, plan, reposicion, regla, contrato, presupuesto, ot_mantenimiento, manual] }
+                    ref:  { type: string, nullable: true, description: "referencia al objeto que la originó (externa u opcional)" }
+                target:
+                  type: object
+                  description: "sabor LOTE — cantidad objetivo"
+                  properties:
+                    item_code: { type: string }
+                    qty:       { type: number, exclusiveMinimum: 0 }
+                    uom:       { type: string }
+                commitment:
+                  type: object
+                  description: "sabor PROYECTO — el pedido/compromiso es ATRIBUTO de la ejecución (no entidad de master data)"
+                  properties:
+                    deliverable:  { type: string }
+                    customer_code: { type: string, nullable: true }
+                    due_at:       { type: string, format: date-time }
+                    external_ref: { type: string, nullable: true }
+                priority: { type: integer, default: 0 }
+      responses:
+        "201": { description: "Ejecución en Borrador; emite nexo.execution.created" }
+        "422": { description: "E1 versión no publicada · E3 disparador incompatible · E4/E5 datos faltantes por sabor", $ref: '#/components/responses/Problem' }
+  /executions/{executionId}:
+    get:
+      summary: Detalle (versión congelada, avance con su MÉTODO de cálculo, desvío contra baseline, hitos)
+      security: [{ bearer: [ nexo.execution.read ] }]
+      responses: { "200": { description: Ejecución }, "404": { $ref: '#/components/responses/Problem' } }
+  /executions/{executionId}:schedule:
+    post:
+      summary: Programar — congela la versión, instancia el DAG, propaga fechas y marca la ruta crítica
+      security: [{ bearer: [ nexo.execution.admin ] }]
+      responses:
+        "200": { description: "Programada; emite nexo.execution.scheduled (con baseline y ruta crítica)" }
+        "422": { description: "E2 versión ya congelada · faltantes de insumo/recurso", $ref: '#/components/responses/Problem' }
+  /executions/{executionId}:release:
+    post:
+      summary: Liberar a planta (habilita el arranque; emite nexo.execution.released)
+      security: [{ bearer: [ nexo.execution.admin ] }]
+      responses: { "200": { description: Liberada } }
+  /executions/{executionId}:pause:
+    post:
+      summary: Pausar (parada, fin de turno, decisión) — emite nexo.execution.paused con causa
+      security: [{ bearer: [ nexo.execution.write ] }]
+      requestBody:
+        content: { application/json: { schema: { type: object, required: [cause], properties: { cause: { type: string, enum: [parada, fin_turno, bloqueo, decision] }, reason_code: { type: string } } } } }
+      responses: { "200": { description: Pausada } }
+  /executions/{executionId}:resume:
+    post:
+      summary: Reanudar
+      security: [{ bearer: [ nexo.execution.write ] }]
+      responses: { "200": { description: En curso } }
+  /executions/{executionId}:reschedule:
+    post:
+      summary: Reprogramar — NUNCA borra historia; conserva el baseline anterior para medir desvío
+      security: [{ bearer: [ nexo.execution.admin ] }]
+      requestBody:
+        content: { application/json: { schema: { type: object, required: [kind, reason], properties: { kind: { type: string, enum: [fechas, alcance, recursos, prioridad, split, migracion_version] }, reason: { type: string } } } } }
+      responses: { "200": { description: "Reprogramada; emite nexo.execution.rescheduled con baseline previo" } }
+  /executions/{executionId}:close:
+    post:
+      summary: Cerrar (normal | parcial | forzado) — corre el checklist de cierre de 10 puntos
+      security: [{ bearer: [ nexo.execution.admin ] }]
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { mode: { type: string, enum: [normal, parcial, forzado] }, reason: { type: string } } } } }
+      responses:
+        "200": { description: "Cerrada; emite nexo.execution.closed" }
+        "422": { description: "Tareas obligatorias abiertas · evidencia obligatoria faltante · punto de control sin resolver · hito pendiente (sabor proyecto)", $ref: '#/components/responses/Problem' }
+  /executions/{executionId}:cancel:
+    post:
+      summary: Cancelar (conserva tiempos y consumos incurridos)
+      security: [{ bearer: [ nexo.execution.admin ] }]
+      responses: { "200": { description: Cancelada } }
+  /executions/{executionId}:reopen:
+    post:
+      summary: Reabrir con autorización y motivo (queda marcada como reabierta en todos los reportes)
+      security: [{ bearer: [ nexo.execution.admin ] }]
+      responses: { "200": { description: Reabierta } }
+  /executions/{executionId}/tasks:
+    get:
+      summary: "Tareas instanciadas — la vista del operario: 'mis tareas ahora'"
+      security: [{ bearer: [ nexo.execution.read ] }]
+      parameters:
+        - { name: state, in: query, schema: { type: string, enum: [Pendiente,Lista,Asignada,EnCurso,Pausada,Bloqueada,EnControl,Completada,NoConforme,Retrabajo,Omitida,Rechazada,Cancelada,Reabierta] } }
+        - { name: assignee_id, in: query, schema: { type: string } }
+      responses: { "200": { description: Página de tareas instanciadas } }
+    post:
+      summary: Agregar tarea AD-HOC a la ejecución (nunca a la versión publicada del Proceso)
+      description: "Sin tiempo estándar (no distorsiona la eficiencia histórica). Entra al denominador del avance: puede BAJAR el %."
+      security: [{ bearer: [ nexo.execution.admin ] }]
+      responses: { "201": { description: Tarea ad-hoc creada; cuenta como desvío de alcance } }
+  /tasks/{taskInstanceId}:take:
+    post:
+      summary: Autoasignación del operario desde la tablet
+      security: [{ bearer: [ nexo.execution.write ] }]
+      responses:
+        "200": { description: "Asignada; emite nexo.task.assigned" }
+        "403": { description: "Sin rol, alcance o calificación (E8)", $ref: '#/components/responses/Problem' }
+  /tasks/{taskInstanceId}:start:
+    post:
+      summary: Iniciar tarea (arranca el reloj real; la espera se mide contra nexo.task.enabled)
+      security: [{ bearer: [ nexo.execution.write ] }]
+      parameters: [{ name: Idempotency-Key, in: header, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "201": { description: "Iniciada; emite nexo.task.started" }
+        "422": { description: "E6 predecesoras incompletas · E7 lag no vencido — se informa CUÁNDO se habilita", $ref: '#/components/responses/Problem' }
+  /tasks/{taskInstanceId}:progress:
+    post:
+      summary: Declarar avance parcial (% | cantidad | checklist)
+      security: [{ bearer: [ nexo.execution.write ] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [method]
+              properties:
+                method:   { type: string, enum: [declarado, cantidad, checklist, senal] }
+                progress_pct: { type: number, minimum: 0, maximum: 100 }
+                qty:      { type: number, nullable: true }
+                uom:      { type: string, nullable: true }
+      responses: { "201": { description: "Emite nexo.task.progress_reported (con el MÉTODO, que siempre viaja junto al valor)" } }
+  /tasks/{taskInstanceId}:block:
+    post:
+      summary: Declarar bloqueo con causa (insumo/recurso/aprobación/calidad) — insumo directo del KPI de cuello de botella
+      security: [{ bearer: [ nexo.execution.write ] }]
+      requestBody:
+        content: { application/json: { schema: { type: object, required: [cause], properties: { cause: { type: string, enum: [insumo, recurso, aprobacion, calidad] }, reason_code: { type: string } } } } }
+      responses: { "201": { description: "Emite nexo.task.blocked" } }
+  /tasks/{taskInstanceId}:unblock:
+    post:
+      summary: Resolver bloqueo (emite nexo.task.unblocked con la duración del bloqueo)
+      security: [{ bearer: [ nexo.execution.write ] }]
+      responses: { "200": { description: Desbloqueada } }
+  /tasks/{taskInstanceId}:complete:
+    post:
+      summary: Cerrar tarea — exige criterio de terminación + evidencia obligatoria + punto de control conforme
+      security: [{ bearer: [ nexo.execution.write ] }]
+      parameters: [{ name: Idempotency-Key, in: header, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                evidence:
+                  type: array
+                  description: "Referencias (Files/Media). Offline-first - se admite status=pending y se materializa después."
+                  items:
+                    type: object
+                    required: [evidence_id, kind, status]
+                    properties:
+                      evidence_id: { type: string }
+                      kind:   { type: string, enum: [photo, file, sensor_reading, signature, video_frame, structured_note] }
+                      media_ref: { type: string, nullable: true }
+                      content_hash: { type: string, nullable: true }
+                      status: { type: string, enum: [pending, materialized] }
+                      requirement_ref: { type: string }
+                force:  { type: boolean, default: false, description: "cierre forzado - requiere nexo.execution.admin + motivo" }
+                reason: { type: string, nullable: true }
+      responses:
+        "201": { description: "Completada; emite nexo.task.completed (y nexo.task.enabled de las sucesoras)" }
+        "403": { description: "Cierre forzado sin permiso (E19)", $ref: '#/components/responses/Problem' }
+        "422": { description: "E10 criterio no cumplido · E11 evidencia obligatoria faltante · E12 control bloqueante no conforme · E15 lote no declarado", $ref: '#/components/responses/Problem' }
+  /tasks/{taskInstanceId}:skip:
+    post:
+      summary: Omitir tarea con justificación (obligatoria requiere autorización — E18)
+      security: [{ bearer: [ nexo.execution.admin ] }]
+      responses: { "200": { description: "Omitida; sale del denominador del avance y se reporta aparte" } }
+  /tasks/{taskInstanceId}/evidence:
+    post:
+      summary: Adjuntar/materializar evidencia después del hecho (cancela deuda de evidencia)
+      security: [{ bearer: [ nexo.execution.write ] }]
+      responses: { "201": { description: "Emite nexo.task.evidence_attached (causation_id al evento original)" } }
+  /executions/{executionId}/inputs:
+    post:
+      summary: Registrar CONSUMO REAL de insumo (declarado | backflush | báscula | escaneo de lote)
+      description: "Sin costo en el MVP - cantidad, unidad y lote. La valorización llega en V1."
+      security: [{ bearer: [ nexo.execution.write ] }]
+      parameters: [{ name: Idempotency-Key, in: header, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_instance_id, item_code, qty, uom, method]
+              properties:
+                task_instance_id: { type: string }
+                item_code: { type: string }
+                qty:  { type: number, minimum: 0 }
+                uom:  { type: string }
+                lot:  { type: string, nullable: true }
+                method: { type: string, enum: [declarado, backflush, bascula, escaneo, ajuste] }
+      responses:
+        "201": { description: "Emite nexo.execution.input_consumed" }
+        "422": { description: "E15 insumo con trazabilidad sin lote · E14 fuera de tolerancia (registra desvío)", $ref: '#/components/responses/Problem' }
+  /executions/{executionId}/milestones:
+    get:
+      summary: Hitos del sabor PROYECTO (comprometido vs. cumplido, con desvío)
+      security: [{ bearer: [ nexo.execution.read ] }]
+      responses: { "200": { description: Lista de hitos } }
+  /executions/pending-imputation:
+    get:
+      summary: "Bandeja del dato huérfano - hechos productivos sin tarea (E24). NUNCA se descartan"
+      security: [{ bearer: [ nexo.execution.read ] }]
+      parameters:
+        - { name: asset_id, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+      responses: { "200": { description: "Página de hechos pendientes, con candidatos sugeridos por ventana temporal" } }
+  /executions/pending-imputation/{eventId}:assign:
+    post:
+      summary: Imputar (o reimputar) un hecho a una tarea instanciada — evento de corrección + recálculo
+      security: [{ bearer: [ nexo.execution.admin ] }]
+      responses: { "200": { description: "Imputado; el evento original permanece intacto (E22)" } }
+components:
+  securitySchemes: { bearer: { type: http, scheme: bearer, bearerFormat: JWT } }
+  responses:
+    Problem: { description: Error RFC7807, content: { application/problem+json: { schema: { type: object } } } }
+```
+
+> **Offline-first.** `:take`, `:start`, `:progress` y `:complete` son las cuatro operaciones que la tablet debe poder
+> encolar sin red. Todas aceptan `Idempotency-Key` y el evento resultante lleva `dedup_key` determinística, de modo que el
+> reenvío tras la reconexión **no duplica** ni el hecho ni la proyección ([05-edge-agent.md](./05-edge-agent.md)).
+
+#### gRPC interno (.proto) — servidor consumido por Ingestion (y Connectors, si está activo)
+
+```proto
+syntax = "proto3";
+package nexo.execution.v1;
+
+service ExecutionContext {
+  // Ingestion: imputar un hecho automático (contador, señal, visión) a la tarea en curso de un activo.
+  rpc ResolveImputation (ResolveImputationRequest) returns (ImputationReply);
+  // Connectors (OPCIONAL) / Reports: snapshot consolidado de una ejecución cerrada.
+  rpc GetExecutionSnapshot (GetExecutionSnapshotRequest) returns (ExecutionSnapshot);
+}
+
+message ResolveImputationRequest {
+  string tenant_id = 1; string asset_id = 2; string occurred_at = 3;
+  string operator_id = 4;   // opcional: refina la resolución
+}
+// method: explicit | active_execution | time_window | unassigned  (event-engine.md §4.3)
+message ImputationReply {
+  string execution_id = 1; string task_instance_id = 2;
+  string method = 3; double confidence = 4; bool pending = 5;
+  repeated string candidates = 6;   // si es ambiguo, va a la bandeja con estos candidatos
+}
+
+message GetExecutionSnapshotRequest { string tenant_id = 1; string execution_id = 2; }
+message ExecutionSnapshot {
+  string execution_id = 1; string code = 2; string flavor = 3;   // lote | proyecto
+  string process_id = 4; string frozen_version = 5; string status = 6;
+  double progress_pct = 7; string progress_method = 8;           // el método SIEMPRE viaja con el valor
+  int64  worked_time_s = 9;
+  double good_qty = 10; double nonconform_qty = 11;              // sabor lote
+  repeated Milestone milestones = 12;                            // sabor proyecto
+  repeated InputConsumption inputs = 13;                         // sin valorizar en el MVP
+  string external_ref = 14;                                      // vacío si el tenant no tiene ERP
+}
+message Milestone { string task_instance_id = 1; string committed_at = 2; string reached_at = 3; }
+message InputConsumption { string item_code = 1; double qty = 2; string uom = 3; string lot = 4; }
+```
+
+#### Eventos
+
+| Dirección | Evento | Consumidores / Notas |
+|---|---|---|
+| **Publica** | `nexo.execution.created.v1` · `scheduled` · `released` · `started` · `paused` · `resumed` · `rescheduled` · `closed` · `cancelled` | Dashboards, Traceability, Notifications, Connectors *(solo si el ERP está activo)* |
+| **Publica** | `nexo.execution.input_consumed.v1` | Traceability (genealogía), Dashboards (desvío de consumo). **Sin costo en el MVP** |
+| **Publica** | `nexo.execution.milestone_reached.v1` | Dashboards (hitos), Notifications — **solo sabor Proyecto** |
+| **Publica** | `nexo.execution.imputation_pending.v1` | Dashboards (bandeja), Notifications, Traceability |
+| **Publica** | `nexo.task.enabled.v1` (origen `system`) | **Dashboards (cola y espera)** — sin este evento la espera no es medible |
+| **Publica** | `nexo.task.assigned` · `started` · `paused` · `resumed` · `progress_reported` · `blocked` · `unblocked` · `completed` · `skipped` | Dashboards (progreso, productividad, cuellos), Traceability, Rules, Notifications |
+| **Publica** | `nexo.task.evidence_attached.v1` | Traceability, Files/Media, Dashboards (deuda de evidencia) |
+| **Consume** | `nexo.process.version_published.v1` / `version_suspended.v1` | Qué versiones puede instanciar |
+| **Consume** | `nexo.masterdata.record_upserted.v1` / `record_archived.v1` | Ítems y unidades válidos al declarar consumo |
+| **Consume** | `nexo.production.registered.v1` | Cantidad producida imputada a la tarea (avance por cantidad, sabor Lote) |
+| **Consume** | `nexo.quality.disposition_set.v1` | Resuelve el punto de control; libera o retrabaja la rama del DAG |
+| **Consume** | `nexo.scrap.registered.v1` | Ajusta cantidades y consumo |
+| **Consume** | `nexo.downtime.started.v1` / `ended.v1`, `machine_event` | Pausa/reanuda la ejecución o la tarea |
+| **Consume** | Canónico categoría `reading` / `machine_event` (Ingestion) | Criterio de terminación automático y cantidad por contador |
+
+---
+
+### 2.8 Production — `Nexo.Production` (por tenant) · **caso estrella del MVP**
 
 **Responsabilidad:** órdenes de producción (espejo de la MO de Odoo), **corridas (Production Run)**, **registros de
 producción** (manual y automático), turnos, ciclo de estados y KPIs (Rendimiento, factor Calidad, cumplimiento de plan).
@@ -678,7 +1482,7 @@ message RunClosure {
 
 ---
 
-### 2.6 Quality — `Nexo.Quality` (por tenant)
+### 2.9 Quality — `Nexo.Quality` (por tenant)
 
 **Responsabilidad:** inspecciones, checklists, tolerancias (LSL/USL), defectos y **disposición** (aceptar/rechazar/retrabajar),
 FPY. Dueño del **factor Calidad** junto con Production (ver [../specs/specs/quality.md](../specs/specs/quality.md)).
@@ -744,7 +1548,7 @@ components:
 
 ---
 
-### 2.7 Scrap — `Nexo.Scrap` (por tenant)
+### 2.10 Scrap — `Nexo.Scrap` (por tenant)
 
 **Responsabilidad:** registros de scrap con **reason code**, costo y clasificación; alimenta el **Scrap Rate** (por piezas
 o costo). Reason codes coherentes con Quality/Downtime (ver [../specs/specs/scrap.md](../specs/specs/scrap.md)).
@@ -802,7 +1606,7 @@ components:
 
 ---
 
-### 2.8 Downtime — `Nexo.Downtime` (por tenant)
+### 2.11 Downtime — `Nexo.Downtime` (por tenant)
 
 **Responsabilidad:** paradas (programadas/no), árbol de motivos, MTBF/MTTR y factor **Disponibilidad**. Emite/consume
 `machine_event`; puede **inferir** parada por ausencia de conteo (ver [../specs/specs/downtime.md](../specs/specs/downtime.md)).
@@ -851,7 +1655,7 @@ components:
 
 ---
 
-### 2.9 Traceability / Event Store — `Nexo.Traceability` (por tenant)
+### 2.12 Traceability / Event Store — `Nexo.Traceability` (por tenant)
 
 **Responsabilidad:** **event store append-only** inmutable por tenant, historial de entidades, **genealogía forward/backward**
 de lote/serie, y correlación evento→registro→Sync Job→ERP. Consume prácticamente todos los eventos; expone **consultas**
@@ -901,11 +1705,23 @@ components:
 
 ---
 
-### 2.10 Connectors / Integrations (Odoo) — `Nexo.Connectors` (compartido, config por tenant)
+### 2.13 Connectors / Integrations (Odoo) — `Nexo.Connectors` (compartido, config por tenant) · **OPCIONAL**
 
-**Responsabilidad:** **ACL** hacia el ERP. En el MVP, conector **Odoo**: **pull** de MO/Producto/UoM/Motivos (contexto) y
-**push** de producción real (**agregado por cierre de corrida**) y scrap (`stock.scrap`); calidad bidireccional opcional.
-Sync Jobs con reintentos/idempotencia/DLQ (ver [../specs/specs/integrations.md](../specs/specs/integrations.md) y
+> **🔌 Servicio opcional (decisión 2026-07-13).** El ERP **está fuera del modelo de capas**: es un **conector lateral**, un
+> acelerador, no la razón de ser. **Ningún flujo del MVP puede depender de él.** Un tenant en modo *standalone* opera con
+> `Nexo.Connectors` **sin desplegar** —o desplegado y sin configurar— y **no pierde ninguna capacidad**: crea sus catálogos
+> ([§2.5](#25-master-data--nexomasterdata-por-tenant)), modela sus procesos ([§2.6](#26-work-model--nexoworkmodel-por-tenant--capa-2))
+> y ejecuta, mide y cierra su trabajo ([§2.7](#27-execution--nexoexecution-por-tenant--capa-3--motor-único-de-los-dos-perfiles)).
+> Consecuencias contractuales: **(a)** ningún servicio llama a Connectors por gRPC; **(b)** Connectors solo **consume** del
+> backbone, nunca es consumidor obligatorio de un evento; **(c)** si el conector está caído o ausente, la captura, la
+> ejecución y los tableros **siguen funcionando**; **(d)** desconectar el ERP revierte los catálogos a gobierno de Nexo sin
+> degradación ([master-data.md](../specs/specs/master-data.md) §3.3.2). INT-01 queda marcada **♻️ a revisar**.
+
+**Responsabilidad:** **ACL** hacia el ERP **cuando el tenant elige tenerlo**. En el MVP, conector **Odoo**: **pull** de
+MO/Producto/UoM/Motivos (contexto) y **push** de producción real (**agregado por cierre de corrida**) y scrap
+(`stock.scrap`); calidad bidireccional opcional. Con el modelo por capas suma, también de forma opcional, el push del
+**cierre de ejecución** (`nexo.execution.closed`) para las ejecuciones que tengan `external_ref`. Sync Jobs con
+reintentos/idempotencia/DLQ (ver [../specs/specs/integrations.md](../specs/specs/integrations.md) y
 [06-odoo-connector.md](./06-odoo-connector.md)).
 
 #### REST (OpenAPI resumido) — administración/operación del conector
@@ -968,11 +1784,15 @@ el payload consolidado. No expone servidor gRPC en el MVP.
 | **Consume** | `nexo.production.order_state_changed.v1` | Mapear estado Nexo→Odoo |
 | **Consume** | `nexo.scrap.registered.v1` / `nexo.scrap.valued.v1` | Push `stock.scrap` |
 | **Consume** | `nexo.quality.disposition_set.v1` | (opcional) push `quality.check` |
+| **Consume** | `nexo.execution.closed.v1` / `cancelled.v1` | **Solo si hay `external_ref`**: reporta el cierre de la ejecución al pedido/MO. Sin conector, el evento simplemente no tiene este consumidor |
 | **Consume** | `nexo.tenant.provisioned.v1` | Seed de configuración base del conector |
+
+> **Ningún servicio del MVP publica *para* Connectors.** Los dominios publican hechos al backbone; Connectors se suscribe
+> **si existe**. Esa asimetría es lo que hace que el ERP sea realmente opcional y no "obligatorio con otro nombre".
 
 ---
 
-### 2.11 Dashboards / Analytics — `Nexo.Dashboards` (por tenant, read side CQRS)
+### 2.14 Dashboards / Analytics — `Nexo.Dashboards` (por tenant, read side CQRS)
 
 **Responsabilidad:** **read models** materializados desde el backbone de eventos y **API de consulta** de KPIs/tableros
 (OEE y sus factores, Producción, Scrap Rate, FPY, MTBF/MTTR, alarmas). Solo lectura; nunca fuente de verdad
@@ -1028,7 +1848,7 @@ components:
 
 ---
 
-### 2.12 Notifications — `Nexo.Notifications` (compartido, segmentado por tenant)
+### 2.15 Notifications — `Nexo.Notifications` (compartido, segmentado por tenant)
 
 **Responsabilidad:** **entrega** multicanal (in-app/email/SMS/push/WhatsApp/webhook), plantillas, preferencias por
 usuario, reintentos/fallback y estado de entrega. La **decisión** (qué disparar) vive en Rules Engine/servicios origen
@@ -1117,18 +1937,25 @@ flowchart TB
     subgraph SHARED["Compartidos"]
       GW["API Gateway (YARP/BFF)"]
       ING["Ingestion / Edge Gateway"]
-      CONN["Connectors (Odoo/ACL)"]
       NOT["Notifications"]
     end
 
     subgraph TENANTSVC["Dominios por tenant"]
-      DEV["Devices"]
-      PROD["Production"]
+      MD["Master Data<br/>catálogos + importador CSV"]
+      DEV["Devices — Capa 1"]
+      WM["Work Model — Capa 2<br/>procesos · tareas · DAG"]
+      EXE["Execution — Capa 3<br/>lote + proyecto · tareas instanciadas"]
+      PROD["Production (perfil repetitivo)"]
       QUA["Quality"]
       SCR["Scrap"]
       DWN["Downtime"]
-      TRC["Traceability / Event Store"]
-      DASH["Dashboards (read)"]
+      TRC["Traceability / Event Store — Capa 4"]
+      DASH["Dashboards (read) — Capa 4"]
+    end
+
+    subgraph OPT["Lateral — OPCIONAL (fuera del modelo de capas)"]
+      CONN["Connectors (Odoo/ACL)<br/>🔌 ningún servicio depende de él"]
+      ERP["ERP (Odoo)"]
     end
 
     BUS(("Backbone de eventos<br/>MSK / MassTransit"))
@@ -1136,8 +1963,14 @@ flowchart TB
     %% ---- gRPC síncrono (línea llena) ----
     TEN -->|"CreateTenantAdmin"| IDN
     ING -->|"ResolveSignal"| DEV
+    ING -->|"ResolveImputation"| EXE
     ING -->|"GetActiveOrder"| PROD
-    CONN -->|"UpsertOrder / GetRunClosure"| PROD
+    EXE -->|"GetPublishedVersion / GetVersion"| WM
+    EXE -->|"ResolveItem / ConvertUom"| MD
+    WM  -->|"ValidateCatalogRefs"| MD
+    MD  -->|"ResolveConnection"| TEN
+    WM  -->|"ResolveConnection"| TEN
+    EXE -->|"ResolveConnection"| TEN
     PROD -->|"ResolveConnection"| TEN
     QUA -->|"ResolveConnection"| TEN
     SCR -->|"ResolveConnection"| TEN
@@ -1151,12 +1984,17 @@ flowchart TB
 
     %% ---- Eventos asíncronos (punteado) ----
     ING -.->|"canónicos por type"| BUS
+    MD -.-> BUS
+    WM -.-> BUS
+    EXE -.-> BUS
     PROD -.-> BUS
     QUA -.-> BUS
     SCR -.-> BUS
     DWN -.-> BUS
     DEV -.-> BUS
     TEN -.-> BUS
+    BUS -.-> WM
+    BUS -.-> EXE
     BUS -.-> PROD
     BUS -.-> QUA
     BUS -.-> SCR
@@ -1164,25 +2002,52 @@ flowchart TB
     BUS -.-> DEV
     BUS -.-> TRC
     BUS -.-> DASH
-    BUS -.-> CONN
     BUS -.-> NOT
+
+    %% ---- ERP: SOLO consume del bus; nadie lo llama ni lo espera ----
+    BUS -.->|"si el conector está activo"| CONN
+    CONN -.->|"push de hechos (store-and-forward)"| ERP
+    ERP -.->|"pull de catálogos / MO"| CONN
+    CONN -.->|"UpsertOrder / GetRunClosure / GetExecutionSnapshot<br/>(solo en modo conectado)"| PROD
+    CONN -.-> EXE
 
     %% ---- Borde REST (Gateway) ----
     GW --> ING
+    GW --> MD
+    GW --> WM
+    GW --> EXE
     GW --> PROD
     GW --> DASH
-    GW --> CONN
     GW --> DEV
+    GW -.->|"solo si hay conector"| CONN
+
+    classDef optional stroke-dasharray: 6 4,stroke-width:2px;
+    class CONN,ERP optional;
 ```
 
-**Lectura:** todo servicio por-tenant depende síncronamente de **Tenancy** (`ResolveConnection`, con caché) e
-indirectamente de **Identity** (validación JWT vía JWKS en el Gateway). Las dependencias gRPC de negocio son deliberadamente
-**pocas y cortas**: Ingestion→Devices (contexto de señal), Ingestion/Connectors→Production (orden activa / upsert / cierre),
-y *→Notifications (envío). El resto de la integración —incluido el caso estrella— fluye por **eventos**.
+**Lectura:**
+
+1. **Todo servicio por-tenant depende síncronamente de Tenancy** (`ResolveConnection`, con caché) e indirectamente de
+   **Identity** (validación JWT vía JWKS en el Gateway). Eso no cambió.
+2. **Las nuevas dependencias gRPC son pocas, cortas y en un solo sentido**, respetando la regla dura del modelo por capas
+   —cada capa depende solo de la de abajo—: `Execution → WorkModel` (traer la versión publicada para congelarla),
+   `Execution → MasterData` (resolver ítem/unidad), `WorkModel → MasterData` (validar referencias antes de publicar) e
+   `Ingestion → Execution` (imputar un hecho automático a la tarea en curso). **No hay llamadas hacia arriba**: WorkModel
+   nunca llama a Execution, y ni WorkModel ni Execution llaman a Dashboards o Traceability.
+3. **El ERP no tiene ninguna flecha entrante desde un servicio de dominio.** Connectors **solo consume** del backbone y, en
+   modo conectado, llama a Production/Execution para traducir. Si el conector no existe, **el grafo sigue siendo conexo y
+   completo**: es la prueba estructural de que el ERP es opcional.
+4. El resto de la integración —incluidos los dos flujos end-to-end de §4— fluye por **eventos**.
 
 ---
 
-## 4. Flujo end-to-end — caso estrella (producción manual → dashboard → Odoo)
+## 4. Flujos end-to-end
+
+Dos flujos, **un solo motor**. El §4.1 es el caso estrella del perfil **repetitivo** (Lote) con ERP conectado; el §4.2 es el
+del perfil **proyecto**, que corre **sin tocar el ERP en ningún paso**. Comparten entidad, eventos, evidencia y cierre;
+difieren en el disparador, el objetivo y los KPIs — exactamente la tesis del modelo por capas.
+
+### 4.1 Perfil repetitivo (Lote) — producción manual → dashboard → Odoo *(opcional)*
 
 Secuencia del MVP: un operario carga producción en la tablet; el evento se normaliza y publica; el read model del dashboard
 se actualiza casi en tiempo real; al **cerrar la corrida**, Connectors empuja la producción **agregada** a la MO de Odoo
@@ -1247,10 +2112,91 @@ sequenceDiagram
    para acotar la carga sobre el ERP (INT-01). Ante ERP caído, **store-and-forward** y la captura nunca se bloquea.
 5. **Cadena de trazabilidad:** Traceability cierra el círculo evento→registro→Sync Job→referencia ERP, habilitando recall
    y RCA (ver [../specs/specs/traceability.md](../specs/specs/traceability.md)).
+6. **El tramo del ERP es opcional.** Los pasos 1 a 5 (captura → evento → read model) son el **valor completo** del flujo. Si
+   el tenant no tiene conector, la secuencia termina en el cierre de corrida y **nada se degrada**.
+
+### 4.2 Perfil proyecto — contrato → DAG → obra → hito → cierre *(sin ERP)*
+
+Mismo motor, otro disparador. Una carpintería de aluminio ejecuta el frente vidriado de una obra: **entregable único**,
+fecha comprometida y tres hitos. El tenant opera en modo **standalone**: cargó sus catálogos por CSV, modeló el Proceso en
+`Nexo.WorkModel` y **nunca** conectó un ERP. La secuencia muestra los eventos nuevos —`task.enabled` (el que hace medible la
+espera), evidencia con materialización diferida e hito— y el cálculo de progreso ponderado.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor PL as Planner / Proyectos
+    actor OP as Montajista (tablet en obra)
+    participant GW as API Gateway
+    participant WM as WorkModel (Capa 2)
+    participant EXE as Execution (Capa 3)
+    participant MD as MasterData
+    participant BUS as Backbone (MSK)
+    participant TRC as Traceability
+    participant DASH as Dashboards (read model)
+
+    Note over PL,WM: Precondición: PRC-OBRA-FV v1.0 PUBLICADA (G1-G10 OK) · catálogos cargados por CSV
+    WM-)BUS: nexo.process.version_published.v1
+
+    PL->>GW: POST /execution/v1/executions (process_id=PRC-OBRA-FV, trigger=contrato,<br/>commitment{deliverable, customer_code, due_at})
+    GW->>EXE: Crear (sabor PROYECTO derivado del PERFIL del proceso, no del disparador — E3)
+    EXE->>MD: gRPC ResolveItem (insumos declarados en las tareas)
+    EXE-)BUS: nexo.execution.created.v1
+
+    PL->>GW: POST /executions/{id}:schedule
+    EXE->>WM: gRPC GetPublishedVersion → DAG + tiempos + evidencia requerida
+    EXE->>EXE: CONGELA la versión · instancia las 12 tareas · propaga fechas · marca ruta crítica
+    EXE-)BUS: nexo.execution.scheduled.v1 (baseline + critical_path)
+    EXE-)BUS: nexo.task.enabled.v1 (P0 · source=system, sin predecesoras)
+    BUS-)DASH: cola por recurso y reloj de espera arrancan acá
+
+    Note over OP,EXE: ... semanas de obra; la tablet trabaja OFFLINE y sincroniza ...
+    OP->>GW: POST /tasks/{P10#1}:take → :start
+    EXE-)BUS: nexo.task.assigned.v1 · nexo.task.started.v1 (wait_s = start − enabled)
+    OP->>GW: POST /tasks/{P10#1}:complete (evidence: protocolo PDF + foto pendiente)
+    EXE->>EXE: Verifica criterio de terminación + evidencia obligatoria + punto de control (E10/E11/E12)
+    EXE-)BUS: nexo.task.completed.v1 (is_milestone=true, evidence_debt=true)
+    EXE-)BUS: nexo.execution.milestone_reached.v1
+    EXE-)BUS: nexo.task.enabled.v1 (P11 · sucesora habilitada por el sistema)
+
+    BUS-)TRC: append-only inmutable + índice de evidencia
+    BUS-)DASH: progreso PONDERADO (peso = tiempo estándar) · desvío vs. baseline · hitos · deuda de evidencia
+    DASH-->>PL: SSE — % avance, ruta crítica y hitos (OEE NO se muestra: no aplica al perfil proyecto — E23)
+
+    OP->>GW: POST /tasks/{P10#1}/evidence (sube la foto al recuperar red)
+    EXE-)BUS: nexo.task.evidence_attached.v1 (causation_id al cierre; cancela la deuda)
+
+    PL->>GW: POST /executions/{id}:close (acta de aceptación adjunta)
+    EXE->>EXE: Checklist de cierre — tareas terminales · evidencia · hitos · consumo real
+    EXE-)BUS: nexo.execution.closed.v1
+    Note over BUS: No hay Connectors suscripto: el tenant NO tiene ERP.<br/>El flujo termina acá, completo y sin degradación.
+```
+
+**Puntos de diseño clave del flujo de proyecto:**
+
+1. **El sabor lo decide el perfil del Proceso, no el disparador** (E3). Un mismo taller puede tener procesos repetitivos y de
+   proyecto conviviendo, con las mismas personas y las mismas máquinas.
+2. **`nexo.task.enabled` es el reloj contra el que se miden las demoras.** Lo emite el **sistema** al cumplirse las
+   precedencias del DAG. Sin él sabríamos cuánto **tardó** una tarea, pero nunca cuánto **esperó** — y sin espera no hay
+   cuello de botella medible.
+3. **La evidencia sobrevive a la falta de red.** El cierre se admite con la referencia `pending` y la tarea queda con **deuda
+   de evidencia** visible; `evidence_attached` la cancela después. Si la política de la tarea fuera *bloqueante*, el cierre
+   se rechaza con 422 y no hay evento de cierre (MOD-19).
+4. **Progreso ponderado, nunca "tareas hechas / totales".** El peso sale del tiempo estándar de la Capa 2, y el **método de
+   cálculo viaja siempre junto al valor**: un 70 % por tiempo consumido y un 70 % por tareas completadas no significan lo mismo.
+5. **KPIs por perfil.** Dashboards muestra % de avance, desvío de cronograma, ruta crítica e hitos; **oculta** OEE y takt
+   —no los muestra en cero—.
+6. **Cero ERP.** Ninguna flecha sale hacia Connectors. El mismo flujo con conector activo solo **agrega** un consumidor de
+   `nexo.execution.closed`; no cambia ni un paso de los anteriores.
 
 ---
 
 ## Decisiones pendientes
+
+> **Cerradas el 2026-07-13 (ya no se discuten en este documento):** el MVP soporta **ambos perfiles** (Lote y Proyecto) con
+> **DAG completo** → `Nexo.WorkModel` y `Nexo.Execution` entran al MVP (PRD-16, MOD-18). La **master data mínima es sin
+> costo** → `Nexo.MasterData` no expone tarifas ni centros de costo, y el *Pedido* es atributo de la ejecución de perfil
+> proyecto (MOD-17). El **ERP es opcional** → ningún servicio depende de `Nexo.Connectors` (INT-01 ♻️ a revisar, INT-07).
 
 | # | Pregunta | Contexto | Default provisional |
 |---|---|---|---|
@@ -1264,3 +2210,11 @@ sequenceDiagram
 | SC-08 | **Quality/Odoo `quality.check` bidireccional** en el MVP | Marcado como opcional (INT-01) | Push de resultados opcional; pull de planes de control diferible a V1 ([06-odoo-connector.md](./06-odoo-connector.md)) |
 | SC-09 | **Gateway público**: YARP en EKS vs. AWS API Gateway | Reabre DT-03 del baseline | YARP/BFF; reevaluar para exposición pública |
 | SC-10 | **Formato de serialización de eventos** (JSON+JSON Schema vs. Avro/Protobuf) | DT-02 del baseline; el `.proto` aquí es solo para gRPC | JSON + JSON Schema registry en MVP; evaluar Avro/Protobuf por volumen |
+| SC-11 | **Convergencia `Nexo.Production` ↔ `Nexo.Execution`** | La Ejecución **generaliza** a `production_run` ([execution.md](../specs/specs/execution.md) PA-2). Mantener los dos servicios duplica ciclo de vida y cantidades; fusionarlos toca el caso estrella ya especificado | **Convivencia en el MVP**: Production conserva orden, cantidades, turnos y OEE (perfil repetitivo) y Execution aporta tareas, DAG, evidencia y los dos perfiles; `nexo.production.registered` **no se renombra** y se imputa a la tarea. Fusión evaluada en V1 con una ruta de migración explícita |
+| SC-12 | **¿`Nexo.WorkModel` y `Nexo.Execution` son dos servicios o un solo *bounded context* "Work"?** | Comparten el DAG y el versionado; separarlos agrega un salto gRPC en el camino caliente de programar | **Dos servicios** (plantilla vs. instancia son ciclos de vida distintos: uno inmutable y de baja frecuencia, otro de altísima frecuencia). Reevaluar si la latencia de `GetPublishedVersion` lo justifica |
+| SC-13 | **Granularidad de instanciación del DAG** | Instanciar todas las tareas al programar (habilita ruta crítica y avance) vs. perezosa. Afecta el volumen de `nexo.task.enabled` y el tablero del operario | Instanciación **completa al programar**; `enabled` al cumplirse precedencias + lag. Ver DT-EV-09 en [02-event-model.md](./02-event-model.md) |
+| SC-14 | **Política de evidencia en el cierre de tarea** | ¿`POST /tasks/{id}:complete` rechaza con 422 (bloqueante), admite deuda (diferida) o solo advierte? Es configurable por tenant/proceso/tarea en la spec (MOD-19) | Las tres políticas están en el contrato; el **default del tenant** es *recomendada* y el MVP admite *bloqueante* por tarea. Confirmar el default con el piloto |
+| SC-15 | **Alcance del importador CSV y exportación** | MVP: unidades, ítems, personas y clientes; procesos solo por interfaz ([master-data.md](../specs/specs/master-data.md) PA-7). Falta decidir la **exportación completa** (portabilidad y salida) | Importador acotado como se documenta en §2.5; **exportación por catálogo** en V1, salvo que se exija como requisito de portabilidad desde el MVP |
+| SC-16 | **Costo real (tarifas, centros de costo) a V1** | La master data mínima del MVP es **sin costo**, así que `input_consumed` viaja sin valorizar y la métrica de costo se muestra **no disponible con motivo** | Reservar el contrato ahora (campos opcionales de vigencia) y **no** implementar ABM de tarifas en el MVP ([event-engine.md](../specs/specs/event-engine.md) PA-9) |
+| SC-17 | **Dueño de la bandeja de pendientes de imputación** | Quién la revisa, con qué frecuencia y qué pasa con lo que nunca se imputa ([execution.md](../specs/specs/execution.md) PA-11) | Bandeja en `Nexo.Execution` con notificación al supervisor; lo no imputado **permanece** y alimenta métricas de activo, nunca de ejecución |
+| SC-18 | **Superficie REST de `Nexo.Execution`** | Es, por lejos, la API más grande del MVP (ejecución + tarea + evidencia + consumo + bandeja). ¿Se parte en dos APIs (`/executions`, `/tasks`) o se mantiene una sola? | Una sola API con dos raíces de recurso (`/executions`, `/tasks`), como está documentado; partir solo si el BFF del operario lo pide |

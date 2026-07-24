@@ -1,9 +1,10 @@
 # 03 · Esquema de Datos — Nexo (MVP)
 
-> **Documento:** `design/03-data-schema.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-11
+> **Documento:** `design/03-data-schema.md` · **Estado:** Borrador v0.2 · **Actualizado:** 2026-07-13
 > **Roles:** Software Architect · Tech Lead
 > **Relacionados:** [00-tech-baseline.md](./00-tech-baseline.md) · [01-multi-tenancy-connection.md](./01-multi-tenancy-connection.md) · [02-event-model.md](./02-event-model.md) · [04-service-contracts.md](./04-service-contracts.md) · [07-security.md](./07-security.md) · [08-observability-ops.md](./08-observability-ops.md)
 > **Base funcional:** [../specs/specs/data-model.md](../specs/specs/data-model.md) · [../specs/specs/control-plane.md](../specs/specs/control-plane.md) · [../specs/specs/multi-tenancy.md](../specs/specs/multi-tenancy.md) · [Tablero de decisiones](../specs/open-questions-board.md)
+> **Base funcional del modelo por capas (v0.2):** [../specs/specs/digital-twin.md](../specs/specs/digital-twin.md) (Capa 1) · [../specs/specs/work-model.md](../specs/specs/work-model.md) (Capa 2) · [../specs/specs/execution.md](../specs/specs/execution.md) (Capa 3) · [../specs/specs/event-engine.md](../specs/specs/event-engine.md) (Capa 4) · [../specs/specs/master-data.md](../specs/specs/master-data.md)
 
 ## Resumen ejecutivo
 
@@ -36,6 +37,34 @@ Refinamientos propuestos que este documento materializa y que **dependen de deci
 - **`reason_codes` con `domains` transversal** `{quality, scrap, downtime}` — alineado con **MOD-03** (rec. (a)).
 - **`event_store` append-only + `batches`/`serials` desde el MVP** — alineado con **MOD-04** (rec. (a), base sin backfill).
 - **Jerarquía física en un schema `config`** propio del tenant — alineado con **MOD-09** (rec. (a)).
+
+### Actualización v0.2 — el modelo funcional pasa a ser por capas
+
+El modelo funcional se reorganizó en **cuatro capas** ([`layered-architecture.md`](../specs/specs/layered-architecture.md)) y este
+esquema lógico se actualiza en consecuencia. La tesis funcional —**un proyecto único y una producción repetitiva se modelan
+igual; cambia el disparador, no el modelo** ([`work-model.md`](../specs/specs/work-model.md) §2)— se materializa acá con
+**una sola familia de tablas** y **dos atributos discriminadores** (`work.processes.profile` y `execution.executions.flavor`).
+
+| Capa funcional | Pregunta que responde | Schemas físicos que la materializan |
+|---|---|---|
+| 1 · Gemelo digital | ¿Qué existe y qué está midiendo? | `config` (jerarquía, turnos, acceso) · `devices` (dispositivos, señales, lecturas) |
+| **2 · Modelo de trabajo (plantilla)** | ¿Cómo se hace el trabajo? | **`work`** (nuevo: procesos versionados, tareas, DAG, insumos por tarea) |
+| **3 · Ejecución (Lote \| Proyecto)** | ¿Qué se está haciendo ahora? | **`execution`** (nuevo: ejecuciones, tareas instanciadas, consumo real, evidencia) · `production` (disparador) · `quality`, `scrap`, `downtime` |
+| 4 · Motor de eventos | ¿Qué pasó realmente? | `trace` (event store append-only, genealogía) · read models (fuera de este documento) |
+| — · Master data propia | ¿Contra qué catálogos se opera sin ERP? | **`master`** (nuevo: `uom`, `items`, `people`, `customers`) |
+
+**Decisiones cerradas (2026-07-13) que fija esta versión:**
+
+1. **El MVP soporta los dos perfiles**: repetitivo (Ejecución sabor **Lote**) y proyecto (Ejecución sabor **Proyecto**).
+   Cierra las preguntas abiertas #2 de `work-model.md` y #5 de `execution.md`.
+2. **DAG completo** de tareas desde el MVP: precedencias tipadas con *lag*, ramas paralelas y **validación de ciclos en
+   la base** (§2.6.3). Cierra la pregunta abierta #1 de `work-model.md`.
+3. **Master data mínima y SIN costo**: `uom`, `items`, `people`, `customers`. **Centros de costo, tarifas y costos con
+   vigencia quedan diferidos a V1** (§2.5.5). El **pedido/compromiso no es catálogo**: son **atributos de la Ejecución**
+   de sabor proyecto (entregable + fecha objetivo + cliente).
+4. **`production.work_orders` deja de ser el concepto raíz**: pasa a ser **un disparador** de una Ejecución (§2.9).
+   `production.production_runs` se relee como **Ejecución sabor Lote**; la estrategia de convivencia y migración —sin
+   romper lo ya implementado ni lo ya escrito— está en §2.9.1.
 
 > **Nota de implementación EF Core.** El DDL aquí es el **objetivo**. Las migraciones EF Core lo generan, pero las
 > características que EF no modela nativamente (particionado, BRIN, índices parciales, columnas generadas, triggers,
@@ -148,7 +177,16 @@ create type nexo.event_source_enum   as enum ('device','manual','api','file');
 create type nexo.event_type_enum     as enum ('production','scrap','quality','downtime','reading','machine_event','custom');
 create type nexo.data_quality_enum   as enum ('good','uncertain','substituted','interpolated','bad');
 create type nexo.sync_status_enum     as enum ('pending','in_progress','completed','failed','retrying','not_applicable');
+
+-- Modelo por capas (v0.2). Dominios CANÓNICOS y cerrados: son la tesis del modelo, no estados de ciclo de vida.
+create type nexo.process_profile_enum   as enum ('repetitive','project');  -- perfil del Proceso (Capa 2)
+create type nexo.execution_flavor_enum  as enum ('batch','project');       -- sabor de la Ejecución (Capa 3)
 ```
+
+> **Por qué `perfil` y `sabor` sí son `enum` nativos.** Son dominios de **dos valores** que sostienen la tesis funcional
+> completa y que **no evolucionan** sin un cambio de producto (a diferencia de `status`, que cambia por servicio). Un
+> `enum` nativo hace imposible persistir un tercer valor por error y documenta la cardinalidad en el propio tipo. El
+> `flavor` **deriva del `profile`** de la versión congelada y se valida en la aplicación (E3), no por FK.
 
 ### 1.7 Tipos numéricos y monetarios
 
@@ -201,7 +239,7 @@ con **particiones mensuales** (revisable a semanal/diario por volumen del tenant
 | Granularidad MVP | **Mensual** por tenant; ajustable por telemetría real |
 | Creación de particiones | Automatizada: `pg_partman` **o** job propio de `Tenant Provisioning` (pre-crea N meses por adelantado) — ver Decisiones pendientes |
 | PK de tabla particionada | Debe **incluir la clave de partición**: `primary key (occurred_at, id)` |
-| Unicidad de negocio | Igual regla: `unique (occurred_at, dedup_key)` (dedup dentro de ventana; cross-partición ver §2.7) |
+| Unicidad de negocio | Igual regla: `unique (occurred_at, dedup_key)` (dedup dentro de ventana; cross-partición ver §2.13) |
 | Índice temporal | **BRIN** sobre `occurred_at`; B-tree solo en columnas de acceso puntual |
 | Retención / archivado | `DETACH PARTITION` de meses fríos → offload a **S3 (Parquet) + Athena** en V1 (DT-01); política por plan (ver [scalability.md](../specs/specs/scalability.md)) |
 | Aislamiento | El particionado es **intra-tenant**; el aislamiento entre tenants ya lo da la DB-per-tenant |
@@ -213,9 +251,12 @@ En lugar de un único `public`, la DB del tenant se organiza en **schemas por bo
 
 | Schema | Contenido | Servicio dueño |
 |---|---|---|
-| `config` | sites, areas, lines, work_centers, shifts, uom, reason_codes, operators, roles, role_assignments, scope_assignments | Configuración/Admin del tenant (**MOD-09**) |
+| `config` | sites, areas, lines, work_centers, shifts, reason_codes, operators, roles, role_assignments, scope_assignments | Configuración/Admin del tenant (**MOD-09**) |
+| **`master`** | **uom, items, people, customers** (master data mínima del MVP, **sin costo**) | **Master Data** (§2.5) |
+| **`work`** | **processes, process_versions, tasks, task_dependencies, task_inputs, task_evidence_requirements** | **Work Model — Capa 2** (§2.6) |
+| **`execution`** | **executions, task_runs, task_run_assignments, input_consumptions, evidence** | **Execution — Capa 3** (§2.7–§2.8) |
 | `devices` | devices, sensors, signals, signal_business_maps, readings | Devices / Ingestion |
-| `production` | products, work_orders, operations, production_runs, production_records | Production |
+| `production` | products, work_orders, operations, production_runs, production_records — **reencuadrado: perfil repetitivo / disparador** (§2.9) | Production |
 | `quality` | quality_inspections, quality_measurements, quality_defects | Quality |
 | `scrap` | scrap_records | Scrap |
 | `downtime` | downtime_events | Downtime |
@@ -223,6 +264,13 @@ En lugar de un único `public`, la DB del tenant se organiza en **schemas por bo
 | `integration` | connectors, sync_jobs | Connectors / Integrations |
 | `rules` | rules, alerts, notifications_log | Rules Engine / Notifications |
 | `platform` | outbox, processed_events, files, audit_log | Cross-cutting (BuildingBlocks) |
+
+> **Dirección de dependencia entre schemas (regla dura del modelo por capas).** `master` no depende de nadie; `work`
+> depende de `master` + `config` (Capa 1); `execution` depende de `work` + `master` + `config`; `production`, `quality`,
+> `scrap` y `downtime` dependen de `execution`; `trace` no depende de ninguno (referencias lógicas, §1.9). **Ninguna FK
+> apunta "hacia abajo" en sentido inverso**: `work` nunca referencia `execution`, y `master` nunca referencia `work`.
+> La única excepción declarada es `master.items.default_process_id → work.processes` (proceso por defecto de un ítem),
+> que se materializa como FK **`deferrable`** y opcional, para no invertir la dependencia en tiempo de creación.
 
 ---
 
@@ -315,8 +363,14 @@ create unique index ux_work_centers_code on config.work_centers (code) where del
 
 ### 2.2 Catálogos del tenant — `config`
 
+> **v0.2 — `uom` se reubica, no se duplica.** El catálogo de unidades pasa a su hogar canónico **`master.uom`**
+> ([`master-data.md`](../specs/specs/master-data.md) §2.4). La reubicación es un `ALTER TABLE ... SET SCHEMA` que
+> **conserva el OID**, de modo que **todas las FK ya declaradas en este documento** (`work_centers.output_uom_id`,
+> `sensors.uom_id`, `signals.uom_id`, `products.uom_id`) **siguen siendo válidas sin reescribirse**. El DDL original se
+> mantiene abajo tal cual, y §2.5.1 documenta el movimiento y los atributos que se le agregan.
+
 ```sql
--- Unidad de medida (UoM) — sincronizable con Odoo (MOD-05)
+-- Unidad de medida (UoM) — sincronizable con Odoo (MOD-05). Hogar canónico a partir de v0.2: master.uom (§2.5.1).
 create table config.uom (
     id             uuid primary key default nexo.uuid_generate_v7(),
     code           text        not null,               -- 'unit','kg','l',...
@@ -522,7 +576,845 @@ create table devices.signal_business_maps (
 create index ix_signal_maps_signal on devices.signal_business_maps (signal_id);
 ```
 
-### 2.5 Producto y trabajo — `production`
+### 2.5 Master data mínima del MVP — `master`
+
+> Materializa el **mínimo viable de catálogos** de [`master-data.md`](../specs/specs/master-data.md) §7.3. Es la
+> contrapartida obligatoria de *"el ERP es opcional"*: sin catálogos propios, la promesa de operar en modo **standalone**
+> es falsa. **Recorte cerrado (2026-07-13): sin costos, sin tarifas y sin centros de costo** → §2.5.5.
+
+Toda tabla de `master` lleva una columna de **gobierno**, que es lo que hace posible el *modo híbrido por entidad*
+(`master-data.md` §3.2 y §4.3): la unidad de gobierno no es el tenant, es el catálogo.
+
+```sql
+create type nexo.master_governance_enum as enum ('local','mirror','linked','divergent');
+-- local     : existe solo en Nexo (modo standalone) → edición total
+-- mirror    : importado del ERP, sin atributos propios cargados → solo campos no gobernados
+-- linked    : vive en ambos, con external_ref establecida → solo campos no gobernados + extensiones
+-- divergent : diferencia no resuelta en un campo gobernado → bloqueado, va a la bandeja de conflictos (R3)
+```
+
+#### 2.5.1 Unidades de medida — reubicación de `config.uom`, sin duplicar
+
+```sql
+-- REUBICACIÓN, no duplicación: ALTER ... SET SCHEMA conserva el OID de la tabla, por lo que TODAS las FK
+-- ya declaradas contra config.uom (work_centers, sensors, signals, products) siguen válidas sin reescritura.
+alter table config.uom set schema master;
+
+-- Compatibilidad de lectura para consultas/EF mappings ya escritos contra config.uom. Se retira en V1 (DS-15).
+create view config.uom as select * from master.uom;
+
+-- Atributos que exige master-data.md §2.4 y que el catálogo original no declaraba.
+alter table master.uom add column magnitude  text     null;                      -- mass|length|area|volume|time|count|energy
+alter table master.uom add column is_base    boolean  not null default false;    -- unidad base de su magnitud
+alter table master.uom add column decimals   smallint not null default 4;        -- precisión de agregación (reproducibilidad)
+alter table master.uom add column governance nexo.master_governance_enum not null default 'local';
+alter table master.uom add constraint ck_uom_magnitude
+    check (magnitude is null or magnitude in ('mass','length','area','volume','time','count','energy'));
+create unique index ux_uom_base_per_magnitude on master.uom (magnitude)
+    where is_base and deleted_at is null;                                        -- una sola base por magnitud
+```
+
+> **Regla dura (`master-data.md` §2.4).** **No se convierte entre magnitudes**: `factor_to_base` solo aplica **dentro** de
+> la misma `magnitude`. Pasar de kg a unidades exige el peso unitario del **ítem**, no una conversión de unidad. Y un
+> `factor_to_base` que ya valorizó historia **no se edita**: se versiona con vigencia (**DS-11**).
+
+#### 2.5.2 Ítems — producto e insumo son **roles** del mismo ítem
+
+```sql
+create table master.items (
+    id               uuid primary key default nexo.uuid_generate_v7(),
+    code             text not null,                     -- SKU / código propio del tenant
+    name             text not null,
+    base_uom_id      uuid not null,                     -- piso absoluto: código + denominación + unidad base
+    roles            text[] not null default '{input}', -- {'product'} | {'input'} | {'product','input'} (semielaborado)
+    category         text null,                         -- material | component | tool | service | external_labor
+    family           text null,
+    tracking         text not null default 'none',      -- none | batch | serial
+    ideal_cycle_time numeric(18,6) null,                -- rol producto, perfil repetitivo; override en work_center (MOD-06)
+    default_process_id uuid null,                       -- proceso por defecto (work.processes); FK deferrable (§1.12)
+    quality_specs    jsonb null,
+    external_ref     text null,                         -- id en el ERP (modo conectado)
+    governance       nexo.master_governance_enum not null default 'local',
+    last_synced_at   timestamptz null,
+    status           text not null default 'active',    -- active | archived (R4: nunca delete físico si hay eventos)
+    created_at   timestamptz not null default now(), created_by uuid null,
+    updated_at   timestamptz not null default now(), updated_by uuid null,
+    deleted_at   timestamptz null, deleted_by uuid null,
+    constraint fk_items_uom foreign key (base_uom_id) references master.uom (id),
+    constraint ck_items_roles    check (roles <@ array['product','input']::text[] and cardinality(roles) > 0),
+    constraint ck_items_tracking check (tracking in ('none','batch','serial')),
+    constraint ck_items_status   check (status in ('active','archived'))
+);
+create unique index ux_items_code on master.items (code) where deleted_at is null;
+create unique index ux_items_external_ref on master.items (external_ref) where deleted_at is null and external_ref is not null;
+create index ix_items_roles on master.items using gin (roles);
+```
+
+> **Por qué un solo catálogo y no dos.** `master-data.md` §2.3 lo fija: *producto e insumo son **roles**, no tipos
+> excluyentes*. El producto terminado de una Ejecución es el insumo de la siguiente; modelarlos como catálogos separados
+> y sin puente **rompe la genealogía multinivel** de [`traceability.md`](../specs/specs/traceability.md). Se reutiliza el
+> patrón `text[] + CHECK + GIN` ya adoptado para `config.reason_codes.domains` (**MOD-03**), por coherencia de estilo.
+> La convivencia con `production.products` (que ya existe y ya está implementado) está en **§2.9.1**.
+
+#### 2.5.3 Personas
+
+```sql
+create table master.people (
+    id              uuid primary key default nexo.uuid_generate_v7(),
+    code            text not null,                     -- legajo / identificación de planta
+    full_name       text not null,
+    default_role_id uuid null,                         -- rol operativo preferido (config.roles)
+    site_id         uuid null,                         -- alcance operativo por defecto
+    line_id         uuid null,
+    user_id         uuid null,                         -- ref. LÓGICA a identidad global (§1.9); puede NO tener usuario
+    calendar        jsonb null,                        -- disponibilidad / calendario propio (relevante en sabor proyecto)
+    external_ref    text null,                         -- legajo en RRHH/ERP
+    governance      nexo.master_governance_enum not null default 'local',
+    status          text not null default 'active',
+    created_at   timestamptz not null default now(), created_by uuid null,
+    updated_at   timestamptz not null default now(), updated_by uuid null,
+    deleted_at   timestamptz null, deleted_by uuid null,
+    constraint fk_people_role foreign key (default_role_id) references config.roles (id),
+    constraint fk_people_site foreign key (site_id) references config.sites (id),
+    constraint fk_people_line foreign key (line_id) references config.lines (id),
+    constraint ck_people_status check (status in ('active','archived'))
+);
+create unique index ux_people_code on master.people (code) where deleted_at is null;
+create unique index ux_people_user on master.people (user_id) where deleted_at is null and user_id is not null;
+
+-- Puente con el perfil de captura rápida ya existente (§2.3): un operario ES una persona.
+alter table config.operators add column person_id uuid null;
+alter table config.operators add constraint fk_operators_person foreign key (person_id) references master.people (id);
+create unique index ux_operators_person on config.operators (person_id) where deleted_at is null and person_id is not null;
+```
+
+> **Deslinde en tres.** **Identidad y credenciales** → Control Plane (**TEN-07**, §3). **Perfil de captura rápida**
+> (PIN/badge/NFC) → `config.operators` (§2.3), que no se toca. **Dimensión operativa** (legajo, rol preferido, alcance,
+> disponibilidad) → `master.people`, que es lo que la Capa 3 necesita para **asignar tareas**. Una persona puede existir
+> **sin** usuario: un operario que ficha por badge no necesita cuenta ([`master-data.md`](../specs/specs/master-data.md) §2.6).
+> **La tarifa horaria NO está acá**: es costo → V1 (§2.5.5).
+
+#### 2.5.4 Clientes (mínimos)
+
+```sql
+create table master.customers (
+    id           uuid primary key default nexo.uuid_generate_v7(),
+    code         text not null,
+    legal_name   text not null,
+    tax_id       text null,                             -- CUIT / tax id
+    contact      jsonb null,                            -- {nombre, email, teléfono}
+    notes        text null,
+    external_ref text null,                             -- partner del ERP/CRM (por defecto lo gobierna el ERP)
+    governance   nexo.master_governance_enum not null default 'local',
+    status       text not null default 'active',
+    created_at   timestamptz not null default now(), created_by uuid null,
+    updated_at   timestamptz not null default now(), updated_by uuid null,
+    deleted_at   timestamptz null, deleted_by uuid null,
+    constraint ck_customers_status check (status in ('active','archived'))
+);
+create unique index ux_customers_code on master.customers (code) where deleted_at is null;
+create unique index ux_customers_external_ref on master.customers (external_ref) where deleted_at is null and external_ref is not null;
+```
+
+> **Deliberadamente pobre** (`master-data.md` §2.7): sin condiciones comerciales, sin precios, sin facturación.
+> **Nexo no construye un CRM.** Existe por una sola razón: el sabor **Proyecto** necesita saber *para quién* es el entregable.
+
+> **No hay tabla `orders` / `pedidos` — decisión cerrada.** El **pedido/compromiso no es catálogo**: son **atributos de la
+> Ejecución** de sabor proyecto (`deliverable`, `committed_date`, `customer_id`, `contract_ref` → §2.7.1). Un pedido del
+> ERP entra como **disparador** (`trigger_kind = 'contract'` + `trigger_external_ref`), no como entidad propia. Se evita
+> así construir medio módulo de ventas para el MVP y queda **una sola fuente del compromiso**, que es además la que se
+> mide contra el cronograma real.
+
+#### 2.5.5 Diferido a V1 — costos, tarifas y centros de costo (explícito)
+
+**No se modelan en el MVP.** Se dejan escritos para que el recorte sea una decisión visible y no un olvido:
+
+| Entidad diferida | Qué habilitaría | Por qué se difiere | Impacto de la ausencia |
+|---|---|---|---|
+| `master.cost_centers` | Imputación contable jerárquica del costo real | Exige alineación con contabilidad del cliente y sincronización con el ERP | El KPI **costo real** de [`event-engine.md`](../specs/specs/event-engine.md) **no se muestra** (se oculta, no se muestra en cero) |
+| `master.labor_rates` (tarifa horaria por persona/rol/centro, **con vigencia**) | Costo de mano de obra real | Requiere versionado por vigencia + valorización a **fecha de ocurrencia** (R7) | Sin costo de mano de obra; el **tiempo real** sí se mide y queda disponible para valorizar retroactivamente |
+| `master.item_costs` (costo unitario del ítem **con vigencia**) | Costo de materiales y desvío de costo | Ídem: vigencia temporal, no edición destructiva | `scrap_records.cost_amount` sigue siendo carga manual (**MOD-08**), no derivada |
+| `work.tasks.standard_cost` | Desvío costo real vs. estándar por tarea | Depende de las tres anteriores | Solo hay desvío de **tiempo** y de **consumo** (cantidad), no de dinero |
+
+> **Regla que ya queda fijada para cuando entren (R7 de `master-data.md`).** Los atributos económicos **no se editan: se
+> versionan con vigencia**, y la valorización usa la tarifa/costo vigente **a la fecha de ocurrencia del hecho**, nunca la
+> actual. Cambiar una tarifa **no reescribe** el costo histórico. Diseñar esto mal en V1 es irreversible; por eso se
+> difiere entero en vez de "empezar con una columna `cost` y ver".
+
+---
+
+### 2.6 Modelo de trabajo (Capa 2) — `work`
+
+> Materializa [`work-model.md`](../specs/specs/work-model.md). Es **la plantilla**: reutilizable, **versionada** e
+> **inmutable una vez publicada**. No conoce ejecuciones, no tiene estado operativo, no tiene cantidades reales.
+> **El `profile` (`repetitive | project`) es el único atributo que distingue "hacer ventanas" de "hacer una obra".**
+
+#### 2.6.1 Proceso y versiones
+
+```sql
+create table work.processes (
+    id                 uuid primary key default nexo.uuid_generate_v7(),
+    code               text not null,                          -- 'PRC-VEN-A30' — identidad estable entre versiones
+    name               text not null,
+    profile            nexo.process_profile_enum not null,     -- repetitive | project (§1.6)
+    current_version_id uuid null,                              -- versión publicada vigente (FK deferrable, ver abajo)
+    output_item_id     uuid null,                              -- salida esperada: producto (repetitive) o entregable tipificado
+    output_uom_id      uuid null,                              -- 'unidades', 'kg', o '1 entregable'
+    site_id            uuid null,                              -- alcance físico SUGERIDO (Capa 1), no obligatorio (CB11)
+    area_id            uuid null,
+    line_id            uuid null,
+    evidence_policy    text not null default 'recommended',    -- default de sus tareas: mandatory|recommended|optional|none
+    skip_policy        text not null default 'authorized',     -- allowed | authorized | forbidden
+    tags               text[] null,                            -- clasificación libre para la biblioteca de procesos
+    external_ref       text null,                              -- correlación con ruta/BOM del ERP (solo sugerencia)
+    status             text not null default 'active',
+    created_at   timestamptz not null default now(), created_by uuid null,
+    updated_at   timestamptz not null default now(), updated_by uuid null,
+    deleted_at   timestamptz null, deleted_by uuid null,
+    constraint fk_processes_item foreign key (output_item_id) references master.items (id),
+    constraint fk_processes_uom  foreign key (output_uom_id) references master.uom (id),
+    constraint fk_processes_site foreign key (site_id) references config.sites (id),
+    constraint fk_processes_area foreign key (area_id) references config.areas (id),
+    constraint fk_processes_line foreign key (line_id) references config.lines (id),
+    constraint ck_processes_evidence check (evidence_policy in ('mandatory','recommended','optional','none')),
+    constraint ck_processes_skip     check (skip_policy in ('allowed','authorized','forbidden')),
+    constraint ck_processes_status   check (status in ('active','archived'))
+);
+create unique index ux_processes_code on work.processes (code) where deleted_at is null;   -- W13
+create index ix_processes_profile on work.processes (profile) where deleted_at is null;
+
+create table work.process_versions (
+    id                uuid primary key default nexo.uuid_generate_v7(),
+    process_id        uuid not null,
+    version_no        text not null,                           -- '1.0', '1.3', '2.0' (mayor.menor[.editorial], §9.4)
+    version_major     smallint not null,
+    version_minor     smallint not null default 0,
+    version_patch     smallint not null default 0,
+    state             text not null default 'draft',           -- draft|in_review|published|suspended|obsolete|discarded
+    profile           nexo.process_profile_enum not null,      -- CONGELADO: cambiarlo exige versión mayor (W11)
+    change_reason     text null,
+    diff              jsonb null,                              -- altas/bajas/modificaciones vs. la versión anterior (§9.5)
+    reviewed_by       uuid null,
+    approved_by       uuid null,
+    published_at      timestamptz null,
+    obsoleted_at      timestamptz null,
+    critical_path_sec numeric(18,2) null,                      -- DERIVADO: duración de la ruta crítica del DAG
+    workload_sec      numeric(18,2) null,                      -- DERIVADO: suma de tiempos (carga de trabajo ≠ duración)
+    created_at   timestamptz not null default now(), created_by uuid null,
+    updated_at   timestamptz not null default now(), updated_by uuid null,
+    deleted_at   timestamptz null, deleted_by uuid null,
+    constraint fk_process_versions_process foreign key (process_id) references work.processes (id),
+    constraint ck_process_versions_state check (state in ('draft','in_review','published','suspended','obsolete','discarded')),
+    constraint ck_process_versions_published check (state <> 'published' or published_at is not null)
+);
+create unique index ux_process_versions_no on work.process_versions (process_id, version_no) where deleted_at is null;
+-- CB15: UNA sola versión publicada por Proceso, garantizado en la base y no solo en la app.
+create unique index ux_process_versions_published on work.process_versions (process_id)
+    where state = 'published' and deleted_at is null;
+create index ix_process_versions_state on work.process_versions (state) where deleted_at is null;
+
+-- Ciclo entre las dos tablas: se cierra con FK deferrable para poder crear proceso + primera versión en una sola tx.
+alter table work.processes add constraint fk_processes_current_version
+    foreign key (current_version_id) references work.process_versions (id) deferrable initially deferred;
+-- Idem para el proceso por defecto del ítem (§2.5.2): la dependencia master → work es opcional y diferida.
+alter table master.items add constraint fk_items_default_process
+    foreign key (default_process_id) references work.processes (id) deferrable initially deferred;
+```
+
+> **La ruta crítica es un derivado, no un dato de carga.** `critical_path_sec` y `workload_sec` se recalculan al publicar
+> y **se nombran distinto en la UI** porque son magnitudes distintas: *"Duración estimada"* (ruta crítica del DAG, las
+> tareas paralelas se solapan) vs. *"Carga de trabajo"* (suma de tiempos, horas-hombre). Confundirlas es la fuente número
+> uno de promesas de fecha imposibles ([`work-model.md`](../specs/specs/work-model.md) §3.5).
+
+#### 2.6.2 Tarea (definición)
+
+```sql
+create table work.tasks (
+    id                  uuid primary key default nexo.uuid_generate_v7(),
+    process_version_id  uuid not null,
+    code                text not null,                         -- 'T5' — único dentro de la versión
+    name                text not null,
+    instructions        text null,                             -- texto operativo (adjuntos vía platform.files)
+    display_seq         integer not null default 0,            -- orden de PRESENTACIÓN; la precedencia real es el DAG
+    -- Tiempos (Capa 2 declara estimado y estándar; el REAL es Capa 3/4 y no vive acá)
+    est_duration_sec        numeric(18,2) null,                -- estimada (valor probable)
+    est_duration_min_sec    numeric(18,2) null,                -- optimista (rango opcional)
+    est_duration_max_sec    numeric(18,2) null,                -- pesimista
+    std_duration_sec        numeric(18,2) null,                -- ESTÁNDAR: base de eficiencia, peso de avance y takt
+    -- Descomposición canónica del tiempo estándar (work-model.md §3.5)
+    std_setup_sec       numeric(18,2) not null default 0,      -- preparación / alistamiento
+    std_exec_sec        numeric(18,2) not null default 0,      -- ejecución efectiva
+    std_wait_sec        numeric(18,2) not null default 0,      -- espera técnica (curado/secado) — NO es tiempo muerto (CB14)
+    std_control_sec     numeric(18,2) not null default 0,      -- control de calidad
+    std_closing_sec     numeric(18,2) not null default 0,      -- cierre / limpieza / registro
+    -- Peso de avance
+    progress_weight     numeric(9,6) null,                     -- explícito; si es null se deriva de std_duration_sec (G6)
+    -- Responsable: ROL primero, persona después (work-model.md §7)
+    responsible_role_id uuid not null,                         -- W3: toda tarea obligatoria tiene rol
+    suggested_person_id uuid null,                             -- excepción justificada (persona nominada)
+    required_qualification text null,                          -- p. ej. 'soldador_calificado' (se valida en Capa 3, E8)
+    -- Recurso requerido (Capa 1): se referencia la CAPACIDAD / tipo de activo, nunca un activo concreto
+    required_capability text null,                             -- 'estampar', 'soldar_mig', 'inspeccion_dimensional'
+    required_asset_type text null,                             -- coherente con config.work_centers.asset_type (G10/W9)
+    -- Criterio de terminación (work-model.md §5.1)
+    completion_kind     text not null default 'declarative',   -- declarative|quantity|measurement|signal|evidence|quality|approval|composite
+    completion_spec     jsonb null,                            -- parámetros: cantidad objetivo, rango, expresión Y/O
+    completion_signal_id uuid null,                            -- señal del gemelo que automatiza el cierre (W14)
+    -- Política y clasificación
+    evidence_policy     text null,                             -- override del proceso; null = hereda (precedencia: tarea > proceso > tenant)
+    obligation          text not null default 'mandatory',     -- mandatory | optional | conditional
+    condition_expr      jsonb null,                            -- solo si obligation='conditional' (parámetro de la ejecución)
+    is_parallelizable   boolean not null default false,        -- admite N personas/recursos simultáneos (CB4)
+    is_repeatable       boolean not null default false,        -- se instancia N veces en la misma ejecución (CB10)
+    is_milestone        boolean not null default false,        -- HITO: atributo de la tarea, no entidad propia (§4.5)
+    -- Punto de control de calidad (opcional por tarea, obligatorio en su cumplimiento si existe)
+    quality_plan_ref    text null,                             -- referencia al plan de control vigente (quality.md §3)
+    quality_gate_moment text null,                             -- entry | in_process | exit
+    quality_gate_blocking boolean not null default true,
+    hazards             text null,                             -- seguridad / EPP / precauciones
+    created_at   timestamptz not null default now(), created_by uuid null,
+    updated_at   timestamptz not null default now(), updated_by uuid null,
+    deleted_at   timestamptz null, deleted_by uuid null,
+    constraint fk_tasks_version foreign key (process_version_id) references work.process_versions (id) on delete cascade,
+    constraint fk_tasks_role    foreign key (responsible_role_id) references config.roles (id),
+    constraint fk_tasks_person  foreign key (suggested_person_id) references master.people (id),
+    constraint fk_tasks_signal  foreign key (completion_signal_id) references devices.signals (id),
+    constraint ck_tasks_completion check (completion_kind in
+        ('declarative','quantity','measurement','signal','evidence','quality','approval','composite')),
+    constraint ck_tasks_obligation check (obligation in ('mandatory','optional','conditional')),
+    constraint ck_tasks_evidence  check (evidence_policy is null or evidence_policy in ('mandatory','recommended','optional','none')),
+    constraint ck_tasks_gate      check (quality_gate_moment is null or quality_gate_moment in ('entry','in_process','exit')),
+    constraint ck_tasks_std_time  check (std_duration_sec is null or std_duration_sec > 0),                    -- W7
+    constraint ck_tasks_weight    check (progress_weight is null or (progress_weight >= 0 and progress_weight <= 100)),
+    constraint ck_tasks_condition check (obligation <> 'conditional' or condition_expr is not null)
+);
+create unique index ux_tasks_code on work.tasks (process_version_id, code) where deleted_at is null;
+create index ix_tasks_version on work.tasks (process_version_id);
+create index ix_tasks_role on work.tasks (responsible_role_id);
+create index ix_tasks_milestone on work.tasks (process_version_id) where is_milestone;
+```
+
+> **El hito no es una entidad.** Es `is_milestone` sobre la tarea ([`work-model.md`](../specs/specs/work-model.md) §4.5).
+> La Capa 3 le agrega la **fecha comprometida** en la tarea instanciada (`execution.task_runs.milestone_committed_date`),
+> porque el compromiso es de la ejecución concreta, no de la plantilla. Queda como decisión abierta si el seguimiento
+> comercial exige una entidad Hito propia (**DS-19**).
+
+#### 2.6.3 Precedencias: el DAG y la prohibición de ciclos
+
+```sql
+create table work.task_dependencies (
+    id                  uuid primary key default nexo.uuid_generate_v7(),
+    process_version_id  uuid not null,                         -- denormalizado: hace verificable G4 con una FK compuesta
+    predecessor_task_id uuid not null,
+    successor_task_id   uuid not null,
+    dep_type            text not null default 'FS',            -- FS (MVP) | SS (V1) | FF (V1)
+    lag_sec             integer not null default 0,            -- demora obligatoria; MVP: >= 0 (curado, fragüe)
+    condition_expr      jsonb null,                            -- arista condicional (V1)
+    created_at   timestamptz not null default now(), created_by uuid null,
+    updated_at   timestamptz not null default now(), updated_by uuid null,
+    deleted_at   timestamptz null, deleted_by uuid null,
+    constraint fk_task_dep_version foreign key (process_version_id) references work.process_versions (id) on delete cascade,
+    -- G4: ambas puntas DEBEN pertenecer a la MISMA versión. Se garantiza con FK compuesta contra una unique de tasks.
+    constraint fk_task_dep_pred foreign key (predecessor_task_id, process_version_id)
+        references work.tasks (id, process_version_id),
+    constraint fk_task_dep_succ foreign key (successor_task_id, process_version_id)
+        references work.tasks (id, process_version_id),
+    constraint ck_task_dep_type check (dep_type in ('FS','SS','FF')),
+    constraint ck_task_dep_lag  check (lag_sec >= 0),                                  -- G5; lag negativo → V1
+    constraint ck_task_dep_self check (predecessor_task_id <> successor_task_id)       -- ciclo trivial de longitud 1
+);
+-- Requisito de las FK compuestas de arriba (se crea ANTES que work.task_dependencies en la migración real).
+-- `id` ya es PK: esta unique es redundante en datos, pero es la que Postgres exige para referenciar el par.
+create unique index ux_tasks_id_version on work.tasks (id, process_version_id);
+create unique index ux_task_dep_edge on work.task_dependencies (predecessor_task_id, successor_task_id)
+    where deleted_at is null;                                                          -- arista única (sin multigrafo)
+create index ix_task_dep_pred on work.task_dependencies (predecessor_task_id);
+create index ix_task_dep_succ on work.task_dependencies (successor_task_id);
+create index ix_task_dep_version on work.task_dependencies (process_version_id);
+```
+
+**Estrategia anti-ciclos: tres barreras, no una.** Un DAG no se puede declarar acíclico con un `CHECK` (la aciclicidad es
+una propiedad del grafo entero, no de la fila). Se defiende en capas:
+
+| Barrera | Alcance | Momento | Mecanismo |
+|---|---|---|---|
+| **B1 — Arista trivial** | `A → A` | Siempre | `ck_task_dep_self` (CHECK de fila) |
+| **B2 — Ciclo de cualquier longitud** | `A → B → C → A` | Al insertar/actualizar una arista | **Constraint trigger `deferrable initially deferred`** con CTE recursiva (abajo). Diferido para permitir reordenar el DAG entero dentro de **una** transacción sin falsos positivos |
+| **B3 — Validación integral G1–G10** | Grafo completo de la versión | Al **publicar** | `work.validate_process_version(uuid)`: aciclicidad, alcanzabilidad, nodo inicial/terminal, pesos, referencias |
+
+```sql
+-- B2: la arista nueva cierra un ciclo si la PREDECESORA ya es alcanzable DESDE la SUCESORA.
+create or replace function work.assert_task_dag_acyclic() returns trigger
+language plpgsql as $$
+begin
+    if exists (
+        with recursive reachable (task_id, depth) as (
+            select new.successor_task_id, 0
+            union
+            select d.successor_task_id, r.depth + 1
+              from work.task_dependencies d
+              join reachable r on d.predecessor_task_id = r.task_id
+             where d.deleted_at is null
+               and r.depth < 500          -- guardarraíl de terminación (RNF: ~200 tareas por proceso)
+        )
+        select 1 from reachable where task_id = new.predecessor_task_id
+    ) then
+        raise exception 'G1: la precedencia %  ->  % cierra un ciclo en el DAG de la versión %',
+            new.predecessor_task_id, new.successor_task_id, new.process_version_id
+            using errcode = '23514', hint = 'La UI del editor debe señalar el ciclo, no solo rechazar el guardado';
+    end if;
+    return null;
+end $$;
+
+create constraint trigger tg_task_dependencies_acyclic
+    after insert or update on work.task_dependencies
+    deferrable initially deferred
+    for each row execute function work.assert_task_dag_acyclic();
+
+-- B3: validación integral al publicar. Devuelve el conjunto de violaciones; publicar exige conjunto vacío.
+-- create function work.validate_process_version(p_version_id uuid)
+--   returns table (rule text, severity text, detail text) ...
+```
+
+| # (`work-model.md` §4.3) | Validación | Dónde se garantiza |
+|---|---|---|
+| **G1** | El grafo es **acíclico** | **B2 (trigger)** + B3 al publicar |
+| **G2** | Toda tarea es alcanzable desde un nodo inicial | B3 (bloquea publicación) |
+| **G3** | Existe ≥1 nodo inicial y ≥1 terminal | B3 |
+| **G4** | Las precedencias referencian tareas **de la misma versión** | **FK compuesta** `(task_id, process_version_id)` |
+| **G5** | Lag coherente con la unidad de tiempo | `ck_task_dep_lag` (MVP: no negativo) |
+| **G6** | Los pesos de avance normalizan a 100 % | B3 (normaliza y avisa) |
+| **G7** | Tarea obligatoria con rol y criterio de terminación | `responsible_role_id not null` + `completion_kind not null` |
+| **G8** | El punto de control referencia un plan vigente | B3 (bloquea o advierte según política) |
+| **G9** | Los insumos referencian ítems existentes | **FK** `task_inputs.item_id → master.items` |
+| **G10** | El recurso requerido existe como tipo de activo | B3 (**advertencia**, no bloqueo) |
+
+**Inmutabilidad de lo publicado (W10).** Una versión `published` no se edita: se deriva una nueva. Se garantiza con
+trigger, no solo con reglas de aplicación:
+
+```sql
+create or replace function work.assert_version_is_draft() returns trigger
+language plpgsql as $$
+declare v_state text; v_id uuid;
+begin
+    v_id := coalesce(new.process_version_id, old.process_version_id);
+    select state into v_state from work.process_versions where id = v_id;
+    if v_state is distinct from 'draft' then
+        raise exception 'W10: la versión % está en estado "%" y no admite edición estructural', v_id, v_state
+            using errcode = '23514', hint = 'Derive una nueva versión (borrador) a partir de la publicada';
+    end if;
+    return coalesce(new, old);
+end $$;
+-- Se aplica a work.tasks, work.task_dependencies, work.task_inputs y work.task_evidence_requirements.
+```
+
+#### 2.6.4 Insumos y evidencia requerida por tarea
+
+```sql
+create table work.task_inputs (
+    id                 uuid primary key default nexo.uuid_generate_v7(),
+    task_id            uuid not null,
+    process_version_id uuid not null,                        -- denormalizado: W10 (trigger) + vista consolidada de insumos
+    item_id            uuid not null,                        -- G9: FK dura al catálogo
+    qty                numeric(18,4) not null,               -- cantidad ESTÁNDAR (teórica)
+    uom_id             uuid not null,
+    basis              text not null default 'per_unit',     -- per_unit (proporcional) | per_execution (fija)
+    tolerance_pct      numeric(9,4) null,                    -- desvío aceptable antes de alertar (E14)
+    input_kind         text not null default 'material',     -- material|component|tool|service|external_labor
+    is_blocking        boolean not null default false,       -- su falta impide arrancar la tarea
+    requires_traceability boolean not null default false,    -- exige registrar lote/serie consumido (E15)
+    substitutes        jsonb null,                           -- [{item_id, factor}] sustitutos admitidos con conversión
+    created_at   timestamptz not null default now(), created_by uuid null,
+    updated_at   timestamptz not null default now(), updated_by uuid null,
+    deleted_at   timestamptz null, deleted_by uuid null,
+    constraint fk_task_inputs_task foreign key (task_id, process_version_id)
+        references work.tasks (id, process_version_id) on delete cascade,
+    constraint fk_task_inputs_item foreign key (item_id) references master.items (id),
+    constraint fk_task_inputs_uom  foreign key (uom_id) references master.uom (id),
+    constraint ck_task_inputs_qty   check (qty > 0),
+    constraint ck_task_inputs_basis check (basis in ('per_unit','per_execution')),
+    constraint ck_task_inputs_kind  check (input_kind in ('material','component','tool','service','external_labor'))
+);
+create unique index ux_task_inputs on work.task_inputs (task_id, item_id) where deleted_at is null;
+create index ix_task_inputs_item on work.task_inputs (item_id);
+create index ix_task_inputs_version on work.task_inputs (process_version_id);
+
+create table work.task_evidence_requirements (
+    id            uuid primary key default nexo.uuid_generate_v7(),
+    task_id       uuid not null,
+    process_version_id uuid not null,
+    evidence_kind text not null,                             -- photo|file|sensor_reading|signature|video|form
+    obligation    text not null default 'mandatory',         -- mandatory | recommended | optional
+    min_count     smallint not null default 1,
+    description   text null,                                 -- qué se espera ver ("foto del sellado")
+    form_schema   jsonb null,                                -- si es 'form': esquema del formulario de captura (Capa 1)
+    created_at   timestamptz not null default now(), created_by uuid null,
+    updated_at   timestamptz not null default now(), updated_by uuid null,
+    deleted_at   timestamptz null, deleted_by uuid null,
+    constraint fk_task_evreq_task foreign key (task_id, process_version_id)
+        references work.tasks (id, process_version_id) on delete cascade,
+    constraint ck_task_evreq_kind check (evidence_kind in ('photo','file','sensor_reading','signature','video','form')),
+    constraint ck_task_evreq_obl  check (obligation in ('mandatory','recommended','optional'))
+);
+create index ix_task_evreq_task on work.task_evidence_requirements (task_id);
+```
+
+> **El insumo se declara en la TAREA, no en el Proceso.** La "lista de materiales" a nivel Proceso es una **vista
+> derivada** (`select item_id, sum(...) from work.task_inputs join work.tasks ... group by`). Esa granularidad temporal
+> —*qué consume cada tarea y cuándo*— es exactamente lo que un BOM de ERP no tiene y lo que permite detectar faltantes
+> **antes** de que frenen la línea ([`work-model.md`](../specs/specs/work-model.md) §6).
+
+---
+
+### 2.7 Ejecución (Capa 3) — `execution`
+
+> Materializa [`execution.md`](../specs/specs/execution.md). Es la **instancia viva** de una versión de Proceso: congela
+> la versión, instancia las tareas, resuelve recursos y personas, abre el reloj y produce los hechos que consume la
+> Capa 4. **Un solo motor y un solo esqueleto de tablas para los dos sabores**: todo lo que difiere entre Lote y Proyecto
+> es *configuración, política de cálculo o presentación*, nunca estructura.
+
+#### 2.7.1 Ejecución
+
+```sql
+create table execution.executions (
+    id                  uuid primary key default nexo.uuid_generate_v7(),
+    code                text not null,                        -- 'L-2026-0417' | 'PRY-2026-012'
+    -- Plantilla CONGELADA (E1/E2): la ejecución queda atada para siempre a la versión con la que arrancó
+    process_id          uuid not null,
+    process_version_id  uuid not null,
+    flavor              nexo.execution_flavor_enum not null,  -- batch | project — DERIVA del profile (E3)
+    status              text not null default 'draft',
+    -- Disparador (§4 de execution.md): lo único que estructuralmente distingue un lote de un proyecto al nacer
+    trigger_kind        text not null default 'manual',       -- work_order|plan|stock|rule|contract|quote|maintenance|manual
+    trigger_ref_kind    text null,                            -- 'work_order' | 'contract' | ...
+    trigger_ref_id      uuid null,                            -- ref. polimórfica (sin FK: el disparador puede ser externo)
+    trigger_external_ref text null,                           -- MO / pedido del ERP, si hay conector
+    -- Objetivo — sabor LOTE
+    target_item_id      uuid null,
+    target_qty          numeric(18,4) null,
+    target_uom_id       uuid null,
+    good_qty            numeric(18,4) not null default 0,     -- proyección de los registros de cantidad
+    reject_qty          numeric(18,4) not null default 0,
+    -- COMPROMISO — sabor PROYECTO (el "pedido" vive acá, no como catálogo; §2.5.4)
+    deliverable         text null,                            -- descripción del entregable único
+    deliverable_item_id uuid null,                            -- opcional: si el entregable está tipificado como ítem
+    customer_id         uuid null,                            -- para quién se trabaja
+    committed_date      timestamptz null,                     -- FECHA OBJETIVO comprometida con el cliente
+    contract_ref        text null,                            -- contrato / presupuesto aprobado / OC del cliente
+    acceptance_at       timestamptz null,                     -- acta de recepción / conformidad
+    -- Alcance físico (Capa 1); cada tarea puede resolver el suyo (CB12)
+    site_id             uuid null, area_id uuid null, line_id uuid null, work_center_id uuid null,
+    -- Tiempos: baseline (para medir desvío) vs. plan vigente vs. real
+    baseline_start_at   timestamptz null,                     -- programación ORIGINAL; nunca se pisa (§8.2 R1)
+    baseline_end_at     timestamptz null,
+    planned_start_at    timestamptz null,                     -- plan vigente tras reprogramaciones
+    planned_end_at      timestamptz null,
+    actual_start_at     timestamptz null,                     -- DERIVADO de eventos
+    actual_end_at       timestamptz null,
+    reschedule_count    integer not null default 0,
+    -- Gestión y avance
+    owner_person_id     uuid null,                            -- responsable general (supervisor / jefe de proyecto)
+    priority            integer not null default 0,
+    progress_pct        numeric(5,2) not null default 0,      -- read model materializado (§11)
+    progress_method     text not null default 'weighted_standard_time',
+    parent_execution_id uuid null,                            -- split: vínculo padre/hija (§9.3, CB20)
+    is_reopened         boolean not null default false,
+    close_kind          text null,                            -- normal|partial|forced|cancelled|expired
+    close_reason        text null,
+    external_ref        text null,
+    sync_status         nexo.sync_status_enum not null default 'pending',
+    created_at   timestamptz not null default now(), created_by uuid null,
+    updated_at   timestamptz not null default now(), updated_by uuid null,
+    deleted_at   timestamptz null, deleted_by uuid null,
+    constraint fk_exec_process  foreign key (process_id) references work.processes (id),
+    constraint fk_exec_version  foreign key (process_version_id) references work.process_versions (id),
+    constraint fk_exec_item     foreign key (target_item_id) references master.items (id),
+    constraint fk_exec_deliv    foreign key (deliverable_item_id) references master.items (id),
+    constraint fk_exec_uom      foreign key (target_uom_id) references master.uom (id),
+    constraint fk_exec_customer foreign key (customer_id) references master.customers (id),
+    constraint fk_exec_owner    foreign key (owner_person_id) references master.people (id),
+    constraint fk_exec_site     foreign key (site_id) references config.sites (id),
+    constraint fk_exec_line     foreign key (line_id) references config.lines (id),
+    constraint fk_exec_wc       foreign key (work_center_id) references config.work_centers (id),
+    constraint fk_exec_parent   foreign key (parent_execution_id) references execution.executions (id),
+    constraint ck_exec_status check (status in ('draft','scheduled','released','in_progress','paused','blocked',
+        'rescheduled','completed','closed','verified','synced','archived','cancelled','reopened')),
+    constraint ck_exec_trigger check (trigger_kind in ('work_order','plan','stock','rule','contract','quote','maintenance','manual')),
+    constraint ck_exec_progress_method check (progress_method in
+        ('weighted_standard_time','explicit_weight','quantity','milestones','hybrid')),
+    constraint ck_exec_close check (close_kind is null or close_kind in ('normal','partial','forced','cancelled','expired')),
+    -- E4: sabor LOTE exige producto y cantidad objetivo... a partir de "programada" (en borrador todavía se está armando)
+    constraint ck_exec_batch_target check (
+        status = 'draft' or flavor <> 'batch' or (target_item_id is not null and target_qty is not null and target_qty > 0)),
+    -- E5: sabor PROYECTO exige entregable y fecha comprometida
+    constraint ck_exec_project_commitment check (
+        status = 'draft' or flavor <> 'project' or (deliverable is not null and committed_date is not null)),
+    -- Coherencia semántica cruzada (W15): un proyecto no declara cantidad objetivo como salida
+    constraint ck_exec_project_no_qty check (flavor <> 'project' or target_qty is null),
+    constraint ck_exec_times check (actual_end_at is null or actual_start_at is null or actual_end_at >= actual_start_at)
+);
+create unique index ux_exec_code on execution.executions (code) where deleted_at is null;
+create index ix_exec_status on execution.executions (status) where deleted_at is null;
+create index ix_exec_flavor_status on execution.executions (flavor, status) where deleted_at is null;
+create index ix_exec_version on execution.executions (process_version_id);
+create index ix_exec_customer on execution.executions (customer_id) where customer_id is not null;
+create index ix_exec_committed on execution.executions (committed_date) where flavor = 'project' and deleted_at is null;
+create index ix_exec_trigger on execution.executions (trigger_ref_kind, trigger_ref_id);
+create unique index ux_exec_external_ref on execution.executions (external_ref) where deleted_at is null and external_ref is not null;
+```
+
+> **Por qué `customer_id` es nullable y `committed_date` no.** El compromiso que el modelo necesita para medir desvío de
+> cronograma es **la fecha**; el cliente puede no existir (un proyecto interno: una mejora de planta, un mantenimiento
+> mayor). Exigir cliente convertiría a `master.customers` en obligatorio y contradiría su carácter opcional
+> ([`master-data.md`](../specs/specs/master-data.md) §2.7). La UI **sí** lo pide por defecto en el alta comercial.
+
+> **Los tres relojes.** `baseline_*` (la promesa original, nunca se pisa), `planned_*` (el plan vigente) y `actual_*`
+> (derivado de eventos). Reprogramar **nunca borra historia**: incrementa `reschedule_count` y emite
+> `execution.rescheduled`; se admiten varios baselines revisados (CB9) manteniendo el original en esta fila y el
+> historial en `trace.event_store`.
+
+#### 2.7.2 Tarea instanciada (`task_runs`) y asignación
+
+```sql
+create table execution.task_runs (
+    id                 uuid primary key default nexo.uuid_generate_v7(),
+    execution_id       uuid not null,
+    task_id            uuid null,                             -- null ⇒ tarea AD-HOC (§9.4): existe en la ejecución, no en la plantilla
+    occurrence         smallint not null default 1,           -- ocurrencia N de una tarea repetible (CB10)
+    is_ad_hoc          boolean not null default false,
+    name               text null,                             -- obligatorio si es ad-hoc; si no, se hereda de la tarea
+    status             text not null default 'pending',
+    -- Asignación (rol → persona se resuelve ACÁ, no en la plantilla)
+    assigned_role_id   uuid null,
+    assigned_person_id uuid null,
+    assignment_mode    text not null default 'individual',    -- individual|crew|role_open|automatic|external
+    -- Recurso resuelto (Capa 1) y marco temporal
+    work_center_id     uuid null,
+    shift_id           uuid null,
+    -- Tiempos: estándar heredado (congelado), estimado ajustable, real MEDIDO
+    std_duration_sec   numeric(18,2) null,                    -- copia de la definición: la plantilla puede versionarse después
+    est_duration_sec   numeric(18,2) null,
+    baseline_start_at  timestamptz null, baseline_end_at timestamptz null,
+    planned_start_at   timestamptz null, planned_end_at  timestamptz null,
+    actual_start_at    timestamptz null, actual_end_at   timestamptz null,
+    -- Tiempo real POR COMPONENTE (misma descomposición canónica que el estándar, work-model.md §3.5)
+    actual_setup_sec   bigint not null default 0,
+    actual_exec_sec    bigint not null default 0,
+    actual_wait_sec    bigint not null default 0,             -- espera técnica: NO es tiempo muerto (CB18)
+    actual_control_sec bigint not null default 0,
+    actual_closing_sec bigint not null default 0,
+    actual_total_sec   bigint generated always as
+                       (actual_setup_sec + actual_exec_sec + actual_wait_sec + actual_control_sec + actual_closing_sec) stored,
+    -- Avance
+    progress_pct       numeric(5,2) not null default 0,
+    progress_method    text null,                             -- declared|quantity|checklist|time|signal  (SIEMPRE se muestra en la UI)
+    produced_qty       numeric(18,4) null,                    -- avance por cantidad (sabor lote)
+    target_qty         numeric(18,4) null,
+    -- Ruta crítica, hitos y calidad
+    is_on_critical_path boolean not null default false,
+    is_milestone        boolean not null default false,
+    milestone_committed_date timestamptz null,                -- el compromiso es de la EJECUCIÓN, no de la plantilla
+    milestone_reached_at     timestamptz null,
+    quality_inspection_id uuid null,                          -- quality.quality_inspections (disposición del punto de control)
+    -- Bloqueos, desvíos y excepciones
+    blocked_reason_code_id uuid null,                         -- causa del bloqueo → insumo del KPI de cuello de botella
+    blocked_at         timestamptz null,
+    is_forced_close    boolean not null default false,        -- override con permiso (E19) → siempre genera excepción
+    skip_reason        text null,                             -- omisión justificada (E18)
+    close_reason       text null,
+    notes              text null,
+    created_at   timestamptz not null default now(), created_by uuid null,
+    updated_at   timestamptz not null default now(), updated_by uuid null,
+    deleted_at   timestamptz null, deleted_by uuid null,
+    constraint fk_task_runs_exec   foreign key (execution_id) references execution.executions (id) on delete cascade,
+    constraint fk_task_runs_task   foreign key (task_id) references work.tasks (id),
+    constraint fk_task_runs_role   foreign key (assigned_role_id) references config.roles (id),
+    constraint fk_task_runs_person foreign key (assigned_person_id) references master.people (id),
+    constraint fk_task_runs_wc     foreign key (work_center_id) references config.work_centers (id),
+    constraint fk_task_runs_shift  foreign key (shift_id) references config.shifts (id),
+    constraint fk_task_runs_reason foreign key (blocked_reason_code_id) references config.reason_codes (id),
+    constraint ck_task_runs_status check (status in ('pending','ready','assigned','in_progress','paused','blocked',
+        'in_control','non_conforming','rework','completed','skipped','rejected','cancelled','reopened')),
+    constraint ck_task_runs_mode   check (assignment_mode in ('individual','crew','role_open','automatic','external')),
+    constraint ck_task_runs_progress check (progress_pct >= 0 and progress_pct <= 100),   -- el avance NUNCA supera 100 %
+    constraint ck_task_runs_adhoc  check ((is_ad_hoc and task_id is null and name is not null)
+                                       or (not is_ad_hoc and task_id is not null)),
+    constraint ck_task_runs_adhoc_std check (not is_ad_hoc or std_duration_sec is null)   -- ad-hoc NO tiene estándar (§9.4)
+);
+create unique index ux_task_runs_instance on execution.task_runs (execution_id, task_id, occurrence)
+    where deleted_at is null and task_id is not null;
+create index ix_task_runs_exec on execution.task_runs (execution_id);
+create index ix_task_runs_status on execution.task_runs (status) where deleted_at is null;
+create index ix_task_runs_person on execution.task_runs (assigned_person_id, status) where deleted_at is null;
+create index ix_task_runs_wc_time on execution.task_runs (work_center_id, actual_start_at desc);
+create index ix_task_runs_milestone on execution.task_runs (execution_id, milestone_committed_date) where is_milestone;
+
+-- Imputación de tiempo por PERSONA: la reasignación no reescribe la historia (§7.3 R3, CB19) y habilita cuadrillas (CB4).
+create table execution.task_run_assignments (
+    id           uuid primary key default nexo.uuid_generate_v7(),
+    task_run_id  uuid not null,
+    person_id    uuid not null,
+    role_id      uuid null,
+    is_lead      boolean not null default false,              -- referente de la cuadrilla
+    assigned_at  timestamptz not null default now(),
+    released_at  timestamptz null,                            -- fin de la participación (reasignación)
+    imputed_sec  bigint not null default 0,                   -- tiempo atribuido a ESTA persona
+    unassign_reason text null,
+    created_at   timestamptz not null default now(), created_by uuid null,
+    updated_at   timestamptz not null default now(), updated_by uuid null,
+    constraint fk_tra_run    foreign key (task_run_id) references execution.task_runs (id) on delete cascade,
+    constraint fk_tra_person foreign key (person_id) references master.people (id),
+    constraint fk_tra_role   foreign key (role_id) references config.roles (id),
+    constraint ck_tra_time   check (released_at is null or released_at >= assigned_at)
+);
+create index ix_tra_run on execution.task_run_assignments (task_run_id);
+create index ix_tra_person on execution.task_run_assignments (person_id, assigned_at desc);
+```
+
+> **Regla E6/E7 (precedencias en ejecución).** Una tarea instanciada pasa a `ready` **solo si** todas sus predecesoras
+> están en estado terminal admitido (`completed` u `skipped`) **y venció el `lag_sec`**. Esto **no** se modela con un
+> constraint: se resuelve leyendo `work.task_dependencies` de la versión congelada. Se materializa como read model para
+> que la tablet del operario no recorra el DAG en cada refresco.
+
+> **Regla E22 — nunca edición destructiva.** Ni `task_runs` ni `input_consumptions` se corrigen editando: se registra un
+> **evento de ajuste** (`is_adjustment`) y el `event_store` conserva ambos. `deleted_at` existe solo para el borrado
+> lógico administrativo, no para "arreglar" un hecho.
+
+#### 2.7.3 Consumo real de insumos
+
+```sql
+create table execution.input_consumptions (
+    id              uuid primary key default nexo.uuid_generate_v7(),
+    execution_id    uuid not null,
+    task_run_id     uuid null,                                -- imputación fina; null solo en consumos a nivel ejecución
+    task_input_id   uuid null,                                -- el ESTÁNDAR de referencia (Capa 2); null si es ad-hoc/sustituto
+    item_id         uuid not null,
+    qty             numeric(18,4) not null,                   -- consumo REAL
+    uom_id          uuid not null,
+    planned_qty     numeric(18,4) null,                       -- previsto = estándar × cantidad objetivo (al programar)
+    batch_id        uuid null,                                -- lote consumido → genealogía (E15)
+    serial_id       uuid null,
+    method          text not null default 'declared',         -- declared|backflush|scale|scan|adjustment
+    is_substitute   boolean not null default false,
+    substitute_of_item_id uuid null,
+    conversion_factor numeric(18,8) null,                     -- factor del sustituto admitido
+    is_out_of_tolerance boolean not null default false,       -- desvío > tolerance_pct (E14) → evento de desvío
+    is_adjustment   boolean not null default false,           -- corrección trazable, NUNCA edición destructiva (E22)
+    person_id       uuid null,
+    source          nexo.event_source_enum not null default 'manual',
+    recorded_at     timestamptz not null default now(),
+    created_at   timestamptz not null default now(), created_by uuid null,
+    updated_at   timestamptz not null default now(), updated_by uuid null,
+    deleted_at   timestamptz null, deleted_by uuid null,
+    constraint fk_ic_exec   foreign key (execution_id) references execution.executions (id),
+    constraint fk_ic_run    foreign key (task_run_id) references execution.task_runs (id),
+    constraint fk_ic_input  foreign key (task_input_id) references work.task_inputs (id),
+    constraint fk_ic_item   foreign key (item_id) references master.items (id),
+    constraint fk_ic_uom    foreign key (uom_id) references master.uom (id),
+    constraint fk_ic_batch  foreign key (batch_id) references trace.batches (id),
+    constraint fk_ic_serial foreign key (serial_id) references trace.serials (id),
+    constraint fk_ic_person foreign key (person_id) references master.people (id),
+    constraint ck_ic_method check (method in ('declared','backflush','scale','scan','adjustment')),
+    constraint ck_ic_qty    check (qty <> 0),                 -- negativo = devolución/ajuste; cero no informa nada
+    constraint ck_ic_subst  check (not is_substitute or substitute_of_item_id is not null)
+);
+create index ix_ic_exec on execution.input_consumptions (execution_id);
+create index ix_ic_run on execution.input_consumptions (task_run_id);
+create index ix_ic_item_time on execution.input_consumptions (item_id, recorded_at desc);
+create index ix_ic_batch on execution.input_consumptions (batch_id) where batch_id is not null;
+```
+
+> **El desvío no se persiste, se deriva.** `qty` (real) y `planned_qty` (previsto) están en la fila; el **desvío** es
+> Capa 4 ([`event-engine.md`](../specs/specs/event-engine.md)). `is_out_of_tolerance` se materializa solo porque es el
+> disparador de la alerta y del filtro operativo, no porque sea la métrica.
+
+---
+
+### 2.8 Evidencia como entidad de primera clase — `execution`
+
+> **La evidencia no es un adjunto decorativo: es parte del contrato del evento**
+> ([`work-model.md`](../specs/specs/work-model.md) §5.2). Por eso tiene tabla propia, hash de integridad y vínculo
+> explícito a la tarea instanciada **y** al evento del `event_store`. `platform.files` sigue siendo el **metadato del
+> objeto en S3**; `execution.evidence` es el **artefacto de negocio** que satisface —o no— un requisito de la Capa 2.
+
+```sql
+create table execution.evidence (
+    id              uuid primary key default nexo.uuid_generate_v7(),
+    -- A qué se ata (al menos uno; se valida con CHECK)
+    execution_id    uuid null,
+    task_run_id     uuid null,
+    requirement_id  uuid null,                                -- work.task_evidence_requirements: QUÉ se exigía
+    -- Vínculo al hecho (Capa 4). Se lleva occurred_at porque event_store está PARTICIONADO por tiempo (§2.13).
+    event_id           uuid null,
+    event_occurred_at  timestamptz null,
+    -- Vínculo a los dominios que también producen evidencia
+    quality_inspection_id uuid null,
+    scrap_record_id       uuid null,
+    downtime_event_id     uuid null,
+    -- Contenido
+    evidence_kind   text not null,                            -- photo|file|sensor_reading|signature|video|form
+    file_id         uuid null,                                -- objeto en S3 (bucket aislado por tenant)
+    form_data       jsonb null,                               -- formulario estructurado (Capa 1) — vive en la DB, no en S3
+    reading_ref     jsonb null,                               -- {signal_id, from, to}: la curva vive en devices.readings
+    -- Integridad y no repudio
+    content_hash    bytea null,                               -- hash del contenido (mismo criterio que event_store.event_hash)
+    hash_algo       text not null default 'sha256',
+    -- Contexto de captura
+    source          nexo.event_source_enum not null default 'manual',
+    captured_at     timestamptz not null default now(),
+    captured_by     uuid null,                                -- ref. lógica a identidad (§1.9)
+    person_id       uuid null,
+    work_center_id  uuid null,
+    is_mandatory    boolean not null default false,           -- copia de la obligatoriedad efectiva al momento de capturar
+    caption         text null,
+    created_at   timestamptz not null default now(), created_by uuid null,
+    updated_at   timestamptz not null default now(), updated_by uuid null,
+    deleted_at   timestamptz null, deleted_by uuid null,
+    constraint fk_ev_exec    foreign key (execution_id) references execution.executions (id),
+    constraint fk_ev_run     foreign key (task_run_id) references execution.task_runs (id),
+    constraint fk_ev_req     foreign key (requirement_id) references work.task_evidence_requirements (id),
+    constraint fk_ev_file    foreign key (file_id) references platform.files (id),
+    constraint fk_ev_person  foreign key (person_id) references master.people (id),
+    constraint fk_ev_wc      foreign key (work_center_id) references config.work_centers (id),
+    constraint ck_ev_kind    check (evidence_kind in ('photo','file','sensor_reading','signature','video','form')),
+    constraint ck_ev_hash    check (hash_algo in ('sha256','sha512')),
+    -- Toda evidencia se ata a ALGO: sin dueño no es evidencia, es un archivo suelto
+    constraint ck_ev_target  check (task_run_id is not null or execution_id is not null or event_id is not null
+                                    or quality_inspection_id is not null or scrap_record_id is not null
+                                    or downtime_event_id is not null),
+    -- Y tiene contenido de alguna de las tres formas posibles
+    constraint ck_ev_payload check (file_id is not null or form_data is not null or reading_ref is not null),
+    -- Coherencia de la referencia al event store particionado
+    constraint ck_ev_event   check ((event_id is null) = (event_occurred_at is null))
+);
+create index ix_ev_run on execution.evidence (task_run_id);
+create index ix_ev_exec on execution.evidence (execution_id);
+create index ix_ev_req on execution.evidence (requirement_id);
+create index ix_ev_event on execution.evidence (event_id) where event_id is not null;
+create index ix_ev_time on execution.evidence (captured_at desc);
+create unique index ux_ev_file on execution.evidence (file_id) where file_id is not null and deleted_at is null;
+```
+
+| Consulta que esta tabla debe resolver barata | Índice / camino |
+|---|---|
+| "¿Esta tarea puede cerrar?" (¿está la evidencia obligatoria?) | `ix_ev_run` + `left join` contra `work.task_evidence_requirements` de la tarea |
+| "Índice de toda la evidencia de la ejecución" (§2.2 de `execution.md`) | `ix_ev_exec` |
+| "Mostrame la prueba de este evento" (auditoría / reclamo de cliente) | `ix_ev_event` + `event_occurred_at` para ir a la partición |
+| "Verificá que este archivo no se cambió" | `content_hash` + `hash_algo` |
+
+> **E11 no se resuelve con un constraint.** "No se cierra una tarea sin la evidencia obligatoria" es una regla que cruza
+> dos tablas y una política de tres niveles (tenant > proceso > tarea); vive en el servicio de Ejecución. La base
+> garantiza que la evidencia **existe, está atribuida y es verificable**; la aplicación garantiza que **alcanza**.
+
+---
+
+### 2.9 Producto y trabajo — `production` (reencuadrado: la Orden es un **disparador**)
+
+> **Reencuadre v0.2 ([`work-model.md`](../specs/specs/work-model.md) §10).** La **Orden de producción deja de ser el
+> concepto raíz**: pasa a ser **una de las formas de disparar** la Ejecución de un Proceso de perfil repetitivo. Y la
+> **Corrida (`production_runs`) se relee como Ejecución sabor Lote**. **Nada de lo escrito abajo se invalida ni se
+> borra**: se reubica un nivel más abajo en la jerarquía conceptual y se le agregan **cuatro FK de reencuadre, todas
+> nullable y aditivas**. La estrategia de convivencia y migración está en §2.9.1.
 
 ```sql
 create table production.products (
@@ -646,9 +1538,89 @@ create index ix_prod_records_time on production.production_records (recorded_at 
 ```
 
 > **`production_records → event_store`:** la relación registro↔evento(s) que exige la trazabilidad se materializa vía
-> `trace.record_event_links` (§2.9), no como FK directa (un registro consolida N eventos).
+> `trace.record_event_links` (§2.13), no como FK directa (un registro consolida N eventos).
 
-### 2.6 Calidad y scrap — `quality`, `scrap`
+**DDL del reencuadre** (aditivo: no altera ninguna columna existente ni ningún dato ya cargado):
+
+```sql
+-- 1) La Orden pasa a ser DISPARADOR de una Ejecución (deja de ser la raíz).
+alter table production.work_orders add column execution_id uuid null;
+alter table production.work_orders add constraint fk_work_orders_execution
+    foreign key (execution_id) references execution.executions (id);
+create index ix_work_orders_execution on production.work_orders (execution_id);
+-- La orden conserva sus estados como DOCUMENTO; el ciclo de vida OPERATIVO se mudó a execution.executions.status.
+
+-- 2) La Corrida se relee como Ejecución sabor Lote: puente 1:1 durante la convivencia.
+alter table production.production_runs add column execution_id uuid null;
+alter table production.production_runs add constraint fk_runs_execution
+    foreign key (execution_id) references execution.executions (id);
+create unique index ux_runs_execution on production.production_runs (execution_id)
+    where execution_id is not null and deleted_at is null;
+
+-- 3) El registro de cantidad se imputa a una TAREA INSTANCIADA (regla del dato huérfano, §13.3 de execution.md).
+alter table production.production_records add column task_run_id uuid null;
+alter table production.production_records add constraint fk_prod_records_task_run
+    foreign key (task_run_id) references execution.task_runs (id);
+create index ix_prod_records_task_run on production.production_records (task_run_id);
+-- null ⇒ PENDIENTE DE IMPUTACIÓN: no se descarta ni se fuerza; va a la bandeja del supervisor (E24, CB2).
+
+-- 4) El producto es un ROL del ítem: puente al catálogo unificado (§2.5.2).
+alter table production.products add column item_id uuid null;
+alter table production.products add constraint fk_products_item
+    foreign key (item_id) references master.items (id);
+create unique index ux_products_item on production.products (item_id)
+    where item_id is not null and deleted_at is null;
+
+-- 5) production.operations queda SUPERSEDIDA por work.tasks (secuencia lineal → DAG).
+comment on table production.operations is
+    'DEPRECADA en v0.2: sustituida por work.tasks + work.task_dependencies (DAG). Se conserva para lectura del histórico; sin altas nuevas.';
+```
+
+#### 2.9.1 Estrategia de convivencia y migración (sin romper lo implementado)
+
+Al 2026-07-13 lo **físicamente implementado** es `production.work_orders`, `production.production_runs`,
+`production.production_records` y `platform.outbox` (migración `InitialCreate`). El reencuadre **no revierte nada de
+eso**: avanza en cuatro fases, cada una desplegable por separado y reversible.
+
+| Fase | Qué se hace | Estado de `production_runs` | Riesgo |
+|---|---|---|---|
+| **M0 — hoy** | Nada. La Corrida funciona sola; no hay `work` ni `execution`. | Fuente de verdad | — |
+| **M1 — aditiva** | Se crean `master`, `work`, `execution` y las FK de reencuadre de arriba (todas **nullable**). Nada obliga a usarlas. | Fuente de verdad; `execution_id` null | **Bajo**: solo `CREATE`/`ADD COLUMN` |
+| **M2 — doble escritura** | Toda Corrida nueva crea también su Ejecución sabor Lote (`flavor='batch'`, `trigger_kind='work_order'`) y queda apareada por `execution_id`. Los KPIs siguen leyendo de `production`. | Fuente de verdad; **espejo** en `execution` | **Medio**: consistencia de la doble escritura (misma transacción + outbox) |
+| **M3 — inversión** | `execution.executions` pasa a ser fuente de verdad. Se hace *backfill* de las corridas históricas. `production_runs` se conserva como **vista de compatibilidad**: `create view production.production_runs as select ... from execution.executions e join ... where e.flavor='batch'`. | **Vista** (solo lectura) | **Medio-alto**: se ejecuta con la app ya leyendo de `execution` |
+
+**Reglas de la convivencia (no negociables):**
+
+1. **Ninguna fase borra datos ni columnas.** El *drop* de `production.operations` y de las columnas redundantes de
+   `production_runs` se evalúa recién en V1, con el histórico ya migrado y verificado.
+2. **`production_run` ≡ Ejecución sabor Lote con un solo recurso y una sola cadena de tareas.** Es el caso **degenerado**
+   del modelo general, no un modelo distinto ([`execution.md`](../specs/specs/execution.md) §2.1). Por eso el mapeo es
+   1:1 y no exige transformación semántica.
+3. **La Orden puede seguir existiendo sin Ejecución** (`execution_id is null`) durante M1–M2: es una orden todavía no
+   liberada a planta. Y una Ejecución **puede existir sin Orden** desde M1: ese es exactamente el punto del pivot
+   (modo standalone, sabor proyecto, creación manual).
+4. **`production.products` y `master.items` conviven** hasta V1 apareados por `products.item_id`. En V1
+   `production.products` pasa a vista sobre `master.items where 'product' = any(roles)`.
+5. **Nada de esto toca el `event_store`.** Los eventos ya escritos conservan su forma; el envelope canónico **se
+   extiende** con `execution_id`/`task_run_id`, no se rompe ([02-event-model.md](./02-event-model.md)).
+
+| Concepto anterior (raíz) | Concepto en el modelo por capas | Tabla destino | Qué cambia en la práctica |
+|---|---|---|---|
+| **Orden de producción** era la raíz | **Disparador** de una Ejecución sabor Lote | `production.work_orders.execution_id` | Sigue existiendo con los mismos atributos y el mismo sync con Odoo. **Deja de ser obligatoria.** |
+| **Operación / Ruta** de la orden | **Tarea** dentro del **Proceso** | `work.tasks` + `work.task_dependencies` | La ruta se generaliza de **secuencia** a **DAG**, con insumos, evidencia y criterio de terminación por paso |
+| **Corrida (`production_runs`)** | **Ejecución (Run)**, sabor Lote | `execution.executions` | Se generaliza para admitir el sabor Proyecto, N recursos y N turnos |
+| **Registro de producción** | Evento imputado a una **tarea instanciada** | `production.production_records.task_run_id` | Gana contexto de tarea; **los KPIs de producción no cambian** |
+| **Producto / SKU de la orden** | **Salida esperada** del Proceso + **rol** del ítem | `work.processes.output_item_id`, `master.items.roles` | Igual, ahora declarado en la plantilla y en un catálogo unificado |
+| **BOM del ERP** | **Insumos por tarea** (el BOM solo sugiere) | `work.task_inputs` | Gana granularidad temporal: se sabe **cuándo** se consume cada cosa |
+| **Tiempo de ciclo ideal** | **Duración estándar de la ruta crítica** | `work.process_versions.critical_path_sec` | Misma magnitud, mejor origen (recalculable con historia real) |
+| **Estados de la orden** | Estados de la **Ejecución** (+ estados del documento) | `execution.executions.status` | El ciclo de vida operativo se mueve a la Ejecución |
+
+> **Compromiso explícito de compatibilidad.** No cambian las fórmulas de OEE/MTBF/MTTR/FPY/scrap rate; no cambia la
+> definición canónica de pieza buena/no conforme; no se rompe el contrato del Evento; el aislamiento **DB-per-tenant** no
+> se toca. **OEE sigue siendo un KPI del perfil repetitivo y no se calcula para ejecuciones de sabor Proyecto** (E23):
+> la UI la **oculta**, no la muestra en cero.
+
+### 2.10 Calidad y scrap — `quality`, `scrap`
 
 ```sql
 create table quality.quality_inspections (
@@ -740,7 +1712,7 @@ create index ix_scrap_reason on scrap.scrap_records (reason_code_id);
 create index ix_scrap_time on scrap.scrap_records (recorded_at desc);
 ```
 
-### 2.7 Paradas — `downtime`
+### 2.11 Paradas — `downtime`
 
 ```sql
 create table downtime.downtime_events (
@@ -779,7 +1751,7 @@ create index ix_dt_reason on downtime.downtime_events (reason_code_id);
 -- constraint ex_dt_no_overlap exclude using gist (work_center_id with =, tstzrange(started_at, coalesce(ended_at,'infinity')) with &&)
 ```
 
-### 2.8 Trazabilidad: lotes, series y genealogía — `trace`
+### 2.12 Trazabilidad: lotes, series y genealogía — `trace`
 
 ```sql
 create table trace.batches (
@@ -833,7 +1805,7 @@ create index ix_gen_parent on trace.genealogy_links (parent_kind, parent_id);
 create index ix_gen_child  on trace.genealogy_links (child_kind, child_id);
 ```
 
-### 2.9 Event Store (append-only, particionado por tiempo) — `trace`
+### 2.13 Event Store (append-only, particionado por tiempo) — `trace`
 
 ```sql
 -- Tabla particionada por RANGE(occurred_at). Append-only, inmutable (MOD-04). Sin soft-delete.
@@ -883,12 +1855,13 @@ create table trace.event_store_p2026_08 partition of trace.event_store
 -- Vínculo registro de negocio ↔ evento(s) origen (la relación N:M que exige la trazabilidad)
 create table trace.record_event_links (
     id           uuid primary key default nexo.uuid_generate_v7(),
-    record_kind  text not null,                            -- production | scrap | quality | downtime
+    record_kind  text not null,                            -- production|scrap|quality|downtime + (v0.2) execution|task_run|input_consumption|evidence
     record_id    uuid not null,
     event_id     uuid not null,
     event_occurred_at timestamptz not null,                -- necesario para navegar la partición
     created_at   timestamptz not null default now(),
-    constraint ck_rel_kind check (record_kind in ('production','scrap','quality','downtime'))
+    constraint ck_rel_kind check (record_kind in ('production','scrap','quality','downtime',
+                                                  'execution','task_run','input_consumption','evidence'))
 );
 create index ix_rel_record on trace.record_event_links (record_kind, record_id);
 create index ix_rel_event  on trace.record_event_links (event_id);
@@ -899,7 +1872,7 @@ create index ix_rel_event  on trace.record_event_links (event_id);
 > store-and-forward esto es suficiente en el MVP. Si se requiere dedup global se complementa con la tabla `platform.processed_events`
 > (inbox) o un índice de dedup no particionado mantenido por Ingestion. Ver [02-event-model.md](./02-event-model.md).
 
-### 2.10 Lecturas time-series (particionado por tiempo) — `devices`
+### 2.14 Lecturas time-series (particionado por tiempo) — `devices`
 
 ```sql
 -- Alta cadencia. Particionada por RANGE(ts). Append-only, sin FK (§1.9), sin auditoría.
@@ -926,7 +1899,7 @@ create table devices.readings_p2026_07 partition of devices.readings
 > **MOD-10:** no toda lectura se materializa como Evento. Las `reading` de altísima frecuencia viven aquí (time-series);
 > se emiten Eventos de dominio al `event_store` **solo cuando la señal lo requiere** (config del mapeo tag→señal).
 
-### 2.11 Integración (config + jobs) — `integration`
+### 2.15 Integración (config + jobs) — `integration`
 
 ```sql
 create table integration.connectors (
@@ -962,7 +1935,7 @@ create index ix_sync_jobs_status on integration.sync_jobs (status, scheduled_at)
 create index ix_sync_jobs_entity on integration.sync_jobs (entity_kind, entity_id);
 ```
 
-### 2.12 Automatización y notificación — `rules`
+### 2.16 Automatización y notificación — `rules`
 
 ```sql
 create table rules.rules (
@@ -1007,7 +1980,7 @@ create table rules.notifications_log (
 create index ix_notif_status on rules.notifications_log (status);
 ```
 
-### 2.13 Cross-cutting: outbox, inbox, files, auditoría — `platform`
+### 2.17 Cross-cutting: outbox, inbox, files, auditoría — `platform`
 
 ```sql
 -- Transactional Outbox (publica eventos atómicamente con el cambio de estado)
@@ -1036,7 +2009,7 @@ create table platform.processed_events (
 -- Archivos / Media (referencias a S3; el objeto vive en storage aislado por tenant)
 create table platform.files (
     id            uuid primary key default nexo.uuid_generate_v7(),
-    entity_kind   text null,                                 -- inspection | defect | scrap | event
+    entity_kind   text null,                                 -- inspection | defect | scrap | event | evidence | task_run
     entity_id     uuid null,
     kind          text null,                                 -- image | document | dataset
     s3_bucket     text not null,
@@ -1309,12 +2282,21 @@ bounded context la gobierna (los demás la referencian).
 | Tabla (schema.tabla) | Bounded context dueño | Ubicación (DB) |
 |---|---|---|
 | `config.sites` / `areas` / `lines` / `work_centers` | Config/Admin del tenant (**MOD-09**) | Tenant |
-| `config.uom` / `reason_codes` / `shifts` | Config/Admin del tenant (seed + extensible) | Tenant |
+| `config.reason_codes` / `shifts` | Config/Admin del tenant (seed + extensible) | Tenant |
 | `config.operators` / `roles` / `role_assignments` / `scope_assignments` | Identity & Access (porción por tenant, **TEN-07**) | Tenant |
+| **`master.uom`** (reubicada desde `config`, §2.5.1) | **Master Data** (gobierno por catálogo; ERP por defecto en modo conectado) | Tenant |
+| **`master.items`** | **Master Data** (producto e insumo = **roles** del mismo ítem) | Tenant |
+| **`master.people`** | **Master Data** (dimensión **operativa**; identidad y credenciales en Global, **TEN-07**) | Tenant |
+| **`master.customers`** | **Master Data** (mínimo; el ERP/CRM manda en modo conectado) | Tenant |
+| **`work.processes`** / **`process_versions`** | **Work Model — Capa 2** (**siempre** propio de Nexo; el ERP nunca lo gobierna) | Tenant |
+| **`work.tasks`** / **`task_dependencies`** / **`task_inputs`** / **`task_evidence_requirements`** | **Work Model — Capa 2** | Tenant |
+| **`execution.executions`** / **`task_runs`** / **`task_run_assignments`** | **Execution — Capa 3** | Tenant |
+| **`execution.input_consumptions`** | **Execution — Capa 3** (alimenta genealogía en Traceability y costo en Capa 4) | Tenant |
+| **`execution.evidence`** | **Execution — Capa 3** (metadato del objeto en `platform.files`; el objeto vive en S3) | Tenant |
 | `devices.devices` / `sensors` / `signals` / `signal_business_maps` | Devices | Tenant |
 | `devices.readings` | Devices / Ingestion (time-series) | Tenant |
-| `production.products` / `work_orders` / `operations` | Production (maestros vía Connectors/Odoo) | Tenant |
-| `production.production_runs` / `production_records` | Production | Tenant |
+| `production.products` / `work_orders` / `operations` | Production — **reencuadrado**: `work_orders` es **disparador** de Ejecución; `operations` **deprecada** por `work.tasks` | Tenant |
+| `production.production_runs` / `production_records` | Production — `production_runs` se relee como **Ejecución sabor Lote** (convivencia M0–M3, §2.9.1) | Tenant |
 | `quality.quality_inspections` / `quality_measurements` / `quality_defects` | Quality | Tenant |
 | `scrap.scrap_records` | Scrap | Tenant |
 | `downtime.downtime_events` | Downtime (Paradas) | Tenant |
@@ -1364,23 +2346,111 @@ erDiagram
     uom            ||--o{ sensors        : "uom_id"
 ```
 
-### 5.2 Producción: órdenes, corridas y registros (tenant)
+### 5.2 Master data mínima del MVP — `master` (tenant)
 
 ```mermaid
 erDiagram
-    products        ||--o{ work_orders        : "product_id"
-    work_orders     ||--o{ operations         : "work_order_id"
-    work_orders     ||--o{ production_runs     : "work_order_id (MOD-01)"
+    uom        ||--o{ items      : "base_uom_id"
+    roles      ||--o{ people     : "default_role_id (config.roles)"
+    sites      ||--o{ people     : "site_id (alcance operativo)"
+    lines      ||--o{ people     : "line_id (alcance operativo)"
+    people     ||--o| operators  : "person_id (perfil de captura rápida, config)"
+    customers  ||--o{ executions : "customer_id (compromiso del sabor proyecto)"
+    items      ||--o{ processes  : "output_item_id / default_process_id (FK deferrable)"
+
+    items {
+        text   code
+        text   name
+        uuid   base_uom_id
+        text_a roles "product | input | ambos (semielaborado)"
+        text   tracking "none | batch | serial"
+        enum   governance "local | mirror | linked | divergent"
+    }
+```
+
+> **Lo que este diagrama NO tiene, a propósito:** no hay `cost_centers`, no hay `labor_rates`, no hay `item_costs` y no
+> hay `orders`. Los tres primeros son **costo → V1** (§2.5.5); el cuarto no existe porque **el pedido es un atributo de
+> la Ejecución**, no un catálogo (§2.5.4).
+
+### 5.3 Modelo de trabajo — Capa 2, `work` (tenant)
+
+```mermaid
+erDiagram
+    processes         ||--o{ process_versions  : "process_id (historial)"
+    process_versions  ||--o| processes         : "current_version_id (vigente, deferrable)"
+    process_versions  ||--o{ tasks             : "process_version_id"
+    process_versions  ||--o{ task_dependencies : "process_version_id (G4)"
+    tasks             ||--o{ task_dependencies : "predecessor_task_id (DAG)"
+    tasks             ||--o{ task_dependencies : "successor_task_id (DAG)"
+    tasks             ||--o{ task_inputs       : "task_id"
+    tasks             ||--o{ task_evidence_requirements : "task_id"
+    items             ||--o{ task_inputs       : "item_id (G9)"
+    uom               ||--o{ task_inputs       : "uom_id"
+    roles             ||--o{ tasks             : "responsible_role_id (rol primero, persona después)"
+    people            ||--o{ tasks             : "suggested_person_id (excepción)"
+    signals           ||--o{ tasks             : "completion_signal_id (criterio automatizado)"
+    items             ||--o{ processes         : "output_item_id (salida esperada)"
+    process_versions  ||--o{ executions        : "se instancia en — CONGELADA (Capa 3)"
+```
+
+> **Las tareas cuelgan de la VERSIÓN, no del Proceso.** Cambiar una tarea es, por definición, crear una nueva versión.
+> `task_dependencies` referencia tareas por **FK compuesta `(id, process_version_id)`**: es lo que hace **imposible** una
+> precedencia entre versiones distintas (G4), sin depender de la aplicación.
+
+### 5.4 Ejecución — Capa 3, `execution` (tenant)
+
+```mermaid
+erDiagram
+    process_versions ||--o{ executions          : "process_version_id (congelada, E1/E2)"
+    executions       ||--o{ executions          : "parent_execution_id (split)"
+    executions       ||--o{ task_runs           : "execution_id"
+    tasks            ||--o{ task_runs           : "task_id (null ⇒ ad-hoc)"
+    task_runs        ||--o{ task_run_assignments : "task_run_id (cuadrilla / reasignación)"
+    people           ||--o{ task_run_assignments : "person_id (tiempo imputado por persona)"
+    people           ||--o{ task_runs           : "assigned_person_id"
+    roles            ||--o{ task_runs           : "assigned_role_id"
+    work_centers     ||--o{ task_runs           : "work_center_id (recurso resuelto, Capa 1)"
+    shifts           ||--o{ task_runs           : "shift_id"
+    reason_codes     ||--o{ task_runs           : "blocked_reason_code_id (cuello de botella)"
+    executions       ||--o{ input_consumptions  : "execution_id"
+    task_runs        ||--o{ input_consumptions  : "task_run_id"
+    task_inputs      ||--o{ input_consumptions  : "task_input_id (estándar de referencia)"
+    items            ||--o{ input_consumptions  : "item_id"
+    batches          ||--o{ input_consumptions  : "batch_id (genealogía, E15)"
+    customers        ||--o{ executions          : "customer_id (sabor proyecto)"
+    items            ||--o{ executions          : "target_item_id (sabor lote)"
+    task_runs        ||--o{ evidence            : "task_run_id"
+    executions       ||--o{ evidence            : "execution_id"
+    task_evidence_requirements ||--o{ evidence  : "requirement_id (qué se exigía)"
+    files            ||--o| evidence            : "file_id (objeto en S3)"
+    quality_inspections ||--o{ task_runs        : "quality_inspection_id (punto de control)"
+```
+
+> **Un solo esqueleto para los dos sabores.** No hay tablas `batch_executions` y `project_executions`: hay
+> `execution.executions` con `flavor` y dos bloques de columnas mutuamente excluyentes por CHECK (objetivo de cantidad vs.
+> compromiso entregable + fecha). Esa es la traducción física exacta de la tesis funcional.
+
+### 5.5 Producción reencuadrada: la Orden como **disparador** (tenant)
+
+```mermaid
+erDiagram
+    products        ||--o{ work_orders         : "product_id"
+    items           ||--o| products            : "item_id (puente al catálogo unificado, §2.9.1)"
+    executions      ||--o{ work_orders         : "execution_id — la ORDEN DISPARA la Ejecución"
+    executions      ||--o| production_runs     : "execution_id (1:1 — la Corrida ES una Ejecución sabor Lote)"
+    work_orders     ||--o{ operations          : "work_order_id (DEPRECADA → work.tasks + DAG)"
+    work_orders     ||--o{ production_runs     : "work_order_id (MOD-01, se conserva en M1–M2)"
     work_centers    ||--o{ production_runs     : "work_center_id"
     shifts          ||--o{ production_runs     : "shift_id"
     production_runs ||--o{ production_records  : "production_run_id"
     work_orders     ||--o{ production_records  : "work_order_id"
+    task_runs       ||--o{ production_records  : "task_run_id (null ⇒ pendiente de imputación, E24)"
     uom             ||--o{ products            : "uom_id"
     batches         ||--o{ production_records  : "batch_id (ref)"
     serials         ||--o{ production_records  : "serial_id (ref)"
 ```
 
-### 5.3 Calidad y scrap (tenant)
+### 5.6 Calidad y scrap (tenant)
 
 ```mermaid
 erDiagram
@@ -1395,7 +2465,7 @@ erDiagram
     files                ||--o{ scrap_records        : "entity_kind=scrap (ref)"
 ```
 
-### 5.4 Paradas (tenant)
+### 5.7 Paradas (tenant)
 
 ```mermaid
 erDiagram
@@ -1407,7 +2477,7 @@ erDiagram
     work_orders     ||--o{ downtime_events : "work_order_id (opcional)"
 ```
 
-### 5.5 Trazabilidad: event store, genealogía y evidencia (tenant)
+### 5.8 Trazabilidad: event store, genealogía y evidencia (tenant)
 
 ```mermaid
 erDiagram
@@ -1417,11 +2487,19 @@ erDiagram
     work_orders        ||--o{ batches            : "work_order_id"
     genealogy_links    }o--o{ batches            : "parent/child (consume/produce)"
     genealogy_links    }o--o{ serials            : "parent/child"
+    input_consumptions }o--o{ batches            : "batch_id (lote CONSUMIDO → genealogía multinivel)"
+    event_store        ||--o{ evidence           : "event_id + event_occurred_at (prueba del hecho)"
+    files              ||--o| evidence           : "file_id (objeto en S3)"
     files              ||--o{ event_store        : "entity_kind=event (ref)"
+    record_event_links }o--o{ task_runs          : "record_kind='task_run' (imputación evento → tarea)"
     outbox             ||..|| event_store         : "publica (mismo tx)"
 ```
 
-### 5.6 Control Plane (DB Global)
+> **La cadena de trazabilidad ahora cierra entera:** `dato → activo → tarea instanciada → ejecución → lote/serie`, con la
+> **evidencia** colgada de cada eslabón y con `content_hash` verificable contra el `event_hash` del evento. Ese era el
+> agujero que dejaba el modelo con la Orden como raíz: el dato llegaba hasta la orden, no hasta *quién hizo qué paso*.
+
+### 5.9 Control Plane (DB Global)
 
 ```mermaid
 erDiagram
@@ -1450,7 +2528,7 @@ erDiagram
 
 | # | Decisión | Contexto | Default provisional |
 |---|---|---|---|
-| **DS-01** | **Formalizar `production_runs`** como entidad de primer nivel | Depende de **MOD-01** (rec. (a)). El DDL ya la incluye con `production_records.production_run_id` **nullable** para poder diferir. | Adoptar (a): Corrida de primer nivel; `production_run_id` pasa a `not null` al confirmarse. |
+| **DS-01** | **Formalizar `production_runs`** como entidad de primer nivel | Depende de **MOD-01** (rec. (a)). El DDL ya la incluye con `production_records.production_run_id` **nullable** para poder diferir. **v0.2: parcialmente superada** — la Corrida se relee como **Ejecución sabor Lote** (§2.9.1); lo que queda por decidir es **en qué fase** (M2/M3) `execution.executions` pasa a ser fuente de verdad. | Adoptar (a) y ejecutar M1 (aditiva) de inmediato; M2 con el primer piloto; M3 con el histórico verificado. |
 | **DS-02** | **Generación de UUIDv7**: app (.NET) vs. DB (función/PG18) | Neon aún en PG 15–17 (sin `uuidv7()` nativo). | Generar en app; función SQL `nexo.uuid_generate_v7()` solo para seeds/scripts. Reevaluar al llegar PG 18. |
 | **DS-03** | **Estrategia de enums**: `enum` nativo vs `text`+`CHECK` vs catálogo | `ALTER TYPE` de enums nativos es rígido; `CHECK` es flexible. | Nativo solo para dominios canónicos estables (source/type/quality/sync); `text`+`CHECK` para estados de ciclo de vida. |
 | **DS-04** | **Automatización de particiones** para `readings`/`event_store` | Crear/rotar particiones mensuales por tenant a escala. | `pg_partman` si Neon lo permite; si no, job propio de `Tenant Provisioning` que pre-crea N meses. Confirmar extensiones disponibles en Neon (DT-01). |
@@ -1464,9 +2542,23 @@ erDiagram
 | **DS-12** | **Extensibilidad por tenant** (campos personalizados) | **MOD-15**: modelo canónico cerrado en MVP. | MVP cerrado; en V2, columna `custom_attrs jsonb` acotada en `work_orders`/`products`/`quality_inspections` sin contaminar KPIs. |
 | **DS-13** | **`operators`/roles: frontera exacta con Identity** | **TEN-07** (rec. (a)) aún marcada abierta. | Identidad/credenciales en Global; perfil operativo, asignaciones y scoping en Tenant (como está modelado). |
 
+### Nuevas (v0.2 — modelo por capas)
+
+| # | Decisión | Contexto | Default provisional |
+|---|---|---|---|
+| **DS-14** | **Fase de corte de `production_runs` → `execution.executions`** | §2.9.1. En M2 hay **doble escritura**: dos filas describen el mismo trabajo y hay que garantizar consistencia (misma transacción + outbox). | M1 ya; M2 con el piloto; M3 (vista de compatibilidad) recién con backfill verificado y KPIs comparados lado a lado. |
+| **DS-15** | **Retiro de la vista `config.uom`** | §2.5.1: `ALTER ... SET SCHEMA` + vista de compatibilidad. La vista es útil mientras haya mapeos EF y consultas apuntando a `config.uom`. | Vista en MVP; se elimina en V1 tras migrar mapeos EF y read models. Los FK ya migraron solos (siguen el OID). |
+| **DS-16** | **Instanciación de tareas: ansiosa vs. perezosa** | Pregunta abierta #1 de `execution.md`. Instanciar todo el DAG al programar habilita ruta crítica y avance completo, pero multiplica filas en `task_runs` (procesos de ~200 tareas × N ejecuciones). | **Ansiosa** (todas al programar): es lo que hace calculable la ruta crítica. Revisar si el percentil alto de tenants degrada el tablero. |
+| **DS-17** | **Validación del DAG: trigger vs. solo aplicación** | §2.6.3. El *constraint trigger* diferido protege contra escrituras fuera del servicio (scripts, importaciones, backfill), a costa de una CTE recursiva por arista. | **Mantener el trigger.** El costo es despreciable (edición de plantilla, no *hot path*) y el daño de un ciclo publicado es total: rompe ruta crítica, avance y programación. |
+| **DS-18** | **Residencia de `evidence`: `execution` vs. `platform`** | §2.8. La evidencia también la producen Quality, Scrap y Downtime, que no dependen de `execution`. | En `execution` (es donde nace y donde se exige). Si Quality/Scrap generan volumen de evidencia sin ejecución asociada, se promueve a `platform.evidence` sin cambiar columnas. |
+| **DS-19** | **Hito: atributo vs. entidad propia** | Pregunta abierta #8 de `work-model.md`. Hoy es `tasks.is_milestone` + `task_runs.milestone_committed_date`. | Atributo en MVP. Si el seguimiento comercial exige hitos con valor contractual y facturación por avance, se promueve a `execution.milestones`. |
+| **DS-20** | **Particionado de `execution.task_runs` e `input_consumptions`** | Hoy no están particionadas: son dato de negocio, no telemetría. Pero un tenant grande con instanciación ansiosa puede llegar a millones de filas/año. | Sin particionar en MVP; índices por `execution_id`/`status`. Reevaluar con telemetría real (**OPS-01**); si hace falta, `PARTITION BY RANGE (created_at)`. |
+| **DS-21** | **Método de avance por defecto** | Pregunta abierta #3 de `execution.md`. Impacta la comparabilidad entre ejecuciones y entre sabores. | `weighted_standard_time` en ambos sabores; `progress_method` se persiste **siempre** por fila y **siempre** se muestra junto al valor (un 70 % por tiempo consumido ≠ un 70 % por tareas). |
+| **DS-22** | **Reserva de insumos al programar** | Pregunta abierta #10 de `execution.md`. Reservar exige un modelo de inventario propio, que **no** está en el mínimo viable de master data. | Solo **verificación** de disponibilidad, sin reserva. `input_consumptions.planned_qty` guarda el previsto; el stock queda fuera del MVP. |
+| **DS-23** | **Ejecución sin Proceso** | Pregunta abierta #4 de `execution.md`. Hoy `process_version_id` es `not null`. | Exigir siempre una versión de Proceso, aunque sea de **una sola tarea** (CB1). Evita una segunda ruta de código y mantiene el estándar como denominador de todo KPI. |
+
 ---
 
 > **Próximo documento:** [04-service-contracts.md](./04-service-contracts.md) — contratos REST/OpenAPI, gRPC y eventos por
-> servicio, que consumen y producen las entidades definidas aquí.
-</content>
-</invoke>
+> servicio, que consumen y producen las entidades definidas aquí. **Impacto de v0.2:** los contratos de Work Model
+> (Capa 2) y Execution (Capa 3) son nuevos y deben agregarse allí; los de Production se releen como el perfil repetitivo.

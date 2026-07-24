@@ -235,7 +235,7 @@ Los tiempos son **tres**, y viven en capas distintas. Confundirlos es la fuente 
 
 Una secuencia lineal (paso 1 → paso 2 → paso 3) alcanza para procesos triviales y **falla en cuanto hay paralelismo real**, que es la norma: mientras se cortan los perfiles, se puede pedir el vidrio; mientras cura el sellador, se puede armar el embalaje. Sin paralelismo no hay **ruta crítica**, y sin ruta crítica no hay forma honesta de responder "¿cuándo termina?" ni de identificar **cuellos de botella**.
 
-Por eso la estructura canónica de un Proceso es un **grafo dirigido acíclico (DAG)**: nodos = Tareas, aristas = Precedencias.
+Por eso la estructura canónica de un Proceso es un **grafo dirigido acíclico (DAG) completo**: nodos = Tareas, aristas = Precedencias. **Decisión cerrada (2026-07-13 — MOD-18):** el DAG completo entra en el MVP; no se arranca con secuencia lineal.
 
 ### 4.2 Tipos de precedencia
 
@@ -247,7 +247,7 @@ Por eso la estructura canónica de un Proceso es un **grafo dirigido acíclico (
 | **Demora / lag** | Espera obligatoria entre A y B (positiva o negativa). | 24 h de curado antes de mover la pieza. | **MVP** (positiva) |
 | **Condicional** | La arista solo aplica si se cumple un parámetro de la ejecución. | "Instalación en obra" solo si el pedido incluye montaje. | V1 |
 
-> **Alcance de V1 (a confirmar).** El brief abre explícitamente la pregunta de si el MVP soporta DAG completo o solo secuencia lineal. La recomendación de este documento es **DAG con precedencias Fin→Inicio + demora desde el MVP** (es lo que habilita ruta crítica y cuellos de botella, que son el valor central de la Capa 4), difiriendo SS/FF/condicionales a V1. Ver [Preguntas abiertas](#preguntas-abiertas).
+> ✅ **Decisión cerrada (2026-07-13 — MOD-18): DAG COMPLETO.** El alcance del grafo **ya no está condicionado**. Las precedencias se modelan como un **grafo dirigido acíclico completo** desde el MVP: **ramas paralelas y convergencia**, **tipos de precedencia** y **demoras (lag)**, con **validación de ciclos** al publicar ([§4.3](#43-validaciones-del-grafo)). **Queda descartada la secuencia lineal** como alcance del MVP, y también la variante "DAG en el modelo, editor lineal en la UI": el editor del MVP permite modelar el grafo. Es lo que habilita **ruta crítica** y **cuellos de botella**, que son el valor central de la Capa 4. La columna "Prioridad" de la tabla anterior indica el orden de implementación de cada **tipo** de precedencia dentro del DAG, no una limitación de la estructura del grafo.
 
 ### 4.3 Validaciones del grafo
 
@@ -771,8 +771,8 @@ Matriz completa de permisos en [`users-permissions.md`](./users-permissions.md).
 
 ## Preguntas abiertas
 
-1. **Alcance del DAG en el MVP.** ¿Se soporta DAG completo con precedencias Fin→Inicio y demoras desde el MVP (recomendación de este documento), o se arranca con secuencia lineal y se difiere el paralelismo? Impacta directamente los KPIs de ruta crítica y cuello de botella.
-2. **Perfiles soportados en el MVP.** ¿El MVP soporta ambos perfiles (repetitivo y proyecto) o arranca solo con repetitivo? Depende de si el piloto es una planta repetitiva o un taller a pedido (ver PRD-02 en [`open-questions-board.md`](../open-questions-board.md)).
+1. ✅ **RESUELTA (2026-07-13 — MOD-18). Alcance del DAG en el MVP: DAG COMPLETO.** Grafo dirigido acíclico completo —ramas paralelas, tipos de precedencia y lags— con validación de ciclos, desde el MVP. **No** se limita a secuencia lineal ni se difiere el paralelismo. Ver [§4.2](#42-tipos-de-precedencia).
+2. ✅ **RESUELTA (2026-07-13 — PRD-16). Perfiles soportados en el MVP: AMBOS.** El MVP soporta el perfil **repetitivo** (ejecución como **Lote**) y el perfil **proyecto** (ejecución como **Proyecto**). La elección del piloto ya no condiciona el alcance. Ver [`execution.md`](./execution.md).
 3. **Obligatoriedad de la evidencia.** ¿La evidencia por tarea es configurable en los tres niveles propuestos (tenant / proceso / tarea) o se simplifica a "siempre opcional" en V1?
 4. **Fuente de verdad del tiempo estándar.** ¿Lo define ingeniería a mano, se importa del ERP, o lo **propone la Capa 4** a partir de la historia real (y quién lo aprueba)?
 5. **Versionado y ejecuciones en curso.** Confirmado que la ejecución queda atada a su versión; falta definir si existe **migración asistida** de ejecuciones abiertas a una versión superior y con qué autorización.
@@ -780,6 +780,6 @@ Matriz completa de permisos en [`users-permissions.md`](./users-permissions.md).
 7. **Parametrización del Proceso.** ¿Se admiten parámetros (medida, color, con/sin montaje) que activen tareas condicionales, o cada variante es un Proceso distinto? Impacta el tamaño de la biblioteca de procesos.
 8. **Hito como atributo vs. entidad.** Se propone modelar el hito como **atributo de la tarea**. ¿Alcanza para el seguimiento de proyectos, o se requiere una entidad Hito con fecha comprometida propia y valor contractual?
 9. **Relación Proceso ↔ Producto.** ¿Un Producto puede tener varios Procesos vigentes (rutas alternativas por planta o por capacidad) y cómo se elige cuál se instancia?
-10. **Costo estándar.** ¿El costeo por tarea entra en el modelo desde el inicio (habilita "costo real vs. estimado") o se difiere hasta tener master data de costos consolidada?
+10. ✅ **RESUELTA (2026-07-13 — MOD-17). Costo estándar: fuera del MVP.** El costeo por tarea se **difiere a V1** junto con centros de costo, tarifas de persona y costo de insumos ([`master-data.md`](./master-data.md) §7.3). El estándar del MVP es de **tiempo**, no de dinero: el Proceso aporta tiempo estándar y pesos de avance. Queda abierto solo el diseño del costeo por tarea al abrir V1.
 11. **Mantenimiento como Proceso.** ¿Los planes de mantenimiento preventivo se modelan como Procesos de perfil repetitivo disparados por calendario/horas de máquina, o quedan fuera del alcance de esta capa?
 12. **Tamaño máximo del Proceso.** ¿Se fija un límite duro de tareas por proceso (rendimiento del editor y del cálculo de ruta crítica) o se deja abierto con degradación gradual?

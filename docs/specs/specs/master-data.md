@@ -12,7 +12,9 @@ Nexo se reposiciona: deja de ser "la capa entre la planta y el ERP" y pasa a ser
 
 Se definen aquí: el **inventario de catálogos propios** que la plataforma debe gobernar; los **dos modos de operación** —**standalone** (master data local, alta manual o por CSV) y **conectado** (el ERP es fuente de verdad de los catálogos que corresponda)— con su variante realista, el **modo híbrido por entidad**; la **política de precedencia y resolución de conflictos** entre ambos mundos, incluidos los dos momentos más delicados del ciclo de vida de un cliente: **conectar un ERP a un tenant que ya venía operando standalone** y **desconectarlo**; el **ciclo de vida** del dato maestro; y la mecánica de **carga manual/CSV**.
 
-Y se dice con todas las letras lo que el brief pide que no se oculte: **esto agranda el alcance del producto**. Es el **costo oculto más grande del pivot**. La sección 7 lo cuantifica cualitativamente eje por eje, sin maquillaje, y propone el recorte mínimo viable para que el MVP siga siendo alcanzable.
+Y se dice con todas las letras lo que el brief pide que no se oculte: **esto agranda el alcance del producto**. Es el **costo oculto más grande del pivot**. La sección 7 lo cuantifica cualitativamente eje por eje, sin maquillaje, y fija el recorte mínimo viable para que el MVP siga siendo alcanzable.
+
+> **Decisión cerrada (2026-07-13 — MOD-17): el mínimo viable del MVP es SIN COSTO.** Entran unidades de medida, productos/ítems, procesos (completo, con DAG), personas y roles, insumos **sin costo** y **clientes mínimos** (código + denominación). El **pedido no es catálogo propio**: el compromiso se modela como **atributos de la Ejecución de perfil proyecto** (entregable + fecha objetivo + cliente). Se **difieren a V1** los centros de costo, las tarifas de persona con vigencia y el costo de insumos con vigencia —y, por lo tanto, la **métrica de costo real**. **El MVP mide TIEMPO y AVANCE, no costo.** El alcance congelado está en [§7.3](#73-cómo-se-acota-el-mínimo-viable-de-catálogos).
 
 ---
 
@@ -52,15 +54,17 @@ Sin master data propia, un tenant sin ERP no puede:
 |---|---|---|---|---|
 | **Unidades de medida** | Base de toda cuantificación y conversión | Todos | **Sí — imprescindible** | Sí (ERP suele mandar) |
 | **Productos / Ítems** | Qué se fabrica o se entrega | Ejecución, eventos, costo, trazabilidad | **Sí — imprescindible** | Sí (ERP suele mandar) |
-| **Insumos** | Qué se consume | Modelo de trabajo, costo, trazabilidad | **Sí — reducido** | Sí |
-| **Procesos** | Cómo se hace el trabajo | Modelo de trabajo (Capa 2), ejecución | **Sí — propio de Nexo** | Rara vez (ver 2.5) |
-| **Personas y roles** | Quién hace el trabajo | Asignación, productividad, permisos | **Sí — reducido** | Parcial (RRHH) |
-| **Centros de costo** | Contra qué se imputa el gasto | Costo real, reportes | **Sí — reducido** | Sí |
-| **Clientes** | Para quién se trabaja | Proyectos, pedidos, trazabilidad comercial | **Opcional** | Sí (ERP/CRM manda) |
-| **Pedidos** | Qué se comprometió y para cuándo | Disparador de ejecución (perfil proyecto) | **Opcional** | Sí (ERP manda) |
+| **Insumos** | Qué se consume | Modelo de trabajo, trazabilidad | **Sí — reducido y SIN COSTO** | Sí |
+| **Procesos** | Cómo se hace el trabajo | Modelo de trabajo (Capa 2), ejecución | **Sí — completo, con DAG (propio de Nexo)** | Rara vez (ver 2.5) |
+| **Personas y roles** | Quién hace el trabajo | Asignación, productividad, permisos | **Sí — persona operativa + rol, SIN tarifa** | Parcial (RRHH) |
+| **Centros de costo** | Contra qué se imputa el gasto | Costo real, reportes | **No — diferido a V1** | Sí |
+| **Clientes** | Para quién se trabaja | Proyectos, trazabilidad comercial | **Sí — mínimo (código + denominación)** | Sí (ERP/CRM manda) |
+| **Pedidos** | Qué se comprometió y para cuándo | Disparador de ejecución (perfil proyecto) | **No es catálogo propio** — el compromiso son **atributos de la Ejecución de perfil proyecto** (ver 2.7) | Sí (ERP manda, cuando existe) |
 | **Motivos (reason codes)** | Por qué pasó algo (parada, scrap, defecto) | Downtime, Scrap, Quality | Ya existente (semilla del alta) | Sí |
 | **Jerarquía física** | Planta → Sector → Línea → Activo | Capa 1, imputación de eventos | Ya existente | Excepcional |
 | **Turnos y calendario** | Cuándo se debía trabajar | Tiempos muertos, disponibilidad | Ya existente | Rara vez |
+
+> **Decisión cerrada (2026-07-13 — MOD-17).** La columna "¿Mínimo viable en MVP?" ya no es una propuesta: refleja el recorte **cerrado** del MVP, detallado en [§7.3](#73-cómo-se-acota-el-mínimo-viable-de-catálogos). Lo esencial: **el MVP no lleva costo**. Centros de costo, tarifas de persona con vigencia y costo de insumos con vigencia se **difieren a V1**, y con ellos la **métrica de costo real**. **El MVP mide TIEMPO y AVANCE.**
 
 > **Deslinde:** los tres últimos ya están cubiertos por documentos vigentes ([data-model.md](./data-model.md), [digital-twin.md](./digital-twin.md), [downtime.md](./downtime.md)). Se listan para completitud del inventario de master data, pero **este documento no los redefine**: aporta sobre ellos únicamente la política de modo de operación y precedencia de la sección 4.
 
@@ -73,7 +77,7 @@ Sin master data propia, un tenant sin ERP no puede:
 | **Identidad** | Código propio del tenant (SKU o equivalente), estable y único; único obligatorio en modo standalone |
 | **Atributos núcleo** | Denominación, unidad de medida base, familia/categoría, estado (activo/discontinuado) |
 | **Atributos productivos** | Tiempo de ciclo ideal (perfil repetitivo), proceso por defecto asociado, especificaciones de calidad de referencia |
-| **Atributos de costo** | Costo estándar de referencia, centro de costo por defecto |
+| **Atributos de costo** | Costo estándar de referencia, centro de costo por defecto. **Diferidos a V1 (MOD-17):** no forman parte del mínimo del MVP |
 | **Atributos de trazabilidad** | Si se controla por lote, por serie, o por ninguno |
 | **Referencia externa** | Identificador en el ERP cuando existe vínculo (modo conectado) |
 | **Extensiones** | Atributos personalizados definidos por el tenant, siempre locales (nunca los pisa el ERP) |
@@ -88,7 +92,7 @@ Sin master data propia, un tenant sin ERP no puede:
 |---|---|
 | **Identidad** | Código propio del tenant |
 | **Atributos núcleo** | Denominación, unidad de medida de consumo, categoría (material / componente / herramienta / servicio) |
-| **Atributos de costo** | Costo unitario de referencia con vigencia temporal (para valorizar el consumo por fecha de ocurrencia) |
+| **Atributos de costo** | Costo unitario de referencia con vigencia temporal (para valorizar el consumo por fecha de ocurrencia). **Diferido a V1 (MOD-17):** en el MVP el insumo se define con **código + denominación + unidad, sin costo**; el consumo se mide en **cantidad**, no en dinero |
 | **Atributos de trazabilidad** | Si se controla por lote/serie; proveedor cuando aplica |
 | **Relación con producto** | Un ítem puede ser **producto** de una ejecución e **insumo** de otra (semielaborado). El modelo lo admite: producto e insumo son **roles**, no tipos excluyentes |
 
@@ -130,26 +134,31 @@ Sin master data propia, un tenant sin ERP no puede:
 
 | Aspecto | Definición funcional |
 |---|---|
-| **Persona / Recurso humano** | Identidad operativa: legajo o código, nombre, rol/es, planta y línea de alcance, calendario y disponibilidad, tarifa horaria (para costo) |
+| **Persona / Recurso humano** | Identidad operativa: legajo o código, nombre, rol/es, planta y línea de alcance, calendario y disponibilidad. **En el MVP el mínimo es persona operativa + rol** (MOD-17); la **tarifa horaria con vigencia** se difiere a V1 junto con el costo |
 | **Rol** | Perfil de responsabilidad al que una tarea se asigna preferentemente (definición canónica en [work-model.md](./work-model.md)) |
 | **Deslinde con acceso** | **Usuario, permisos, RBAC/ABAC y scoping viven en [users-permissions.md](./users-permissions.md)**. Acá vive la dimensión **operativa** de la persona: disponibilidad, calendario, tarifa, competencia |
 | **Relación** | Una persona puede tener usuario de acceso o no (un operario de planta puede registrarse por identificación sin cuenta propia); todo usuario con actividad en planta se vincula a una persona |
 | **Sincronización con ERP/RRHH** | Parcial: nombres y legajos pueden venir de un sistema de RRHH; la tarifa y la competencia suelen quedarse en Nexo |
 
-### 2.7 Clientes y pedidos (opcional)
+### 2.7 Clientes (mínimo) y el compromiso del proyecto
 
-**Qué es:** el vínculo entre el trabajo de planta y el compromiso comercial. Es **opcional por diseño**: una planta que solo fabrica contra stock no los necesita.
+> **Decisión cerrada (2026-07-13 — MOD-17).** **Cliente entra al MVP como catálogo mínimo. Pedido NO es catálogo propio.** El compromiso comercial se modela como **atributos de la Ejecución de perfil proyecto** —**entregable + fecha objetivo + cliente**— y no como una entidad de master data con su propio ABM, importador y ciclo de vida.
 
-| Entidad | Cuándo hace falta | Atributos núcleo |
+**Qué es:** el vínculo entre el trabajo de planta y el compromiso comercial.
+
+| Entidad | Dónde vive | Atributos en el MVP |
 |---|---|---|
-| **Cliente** | Perfil proyecto (trabajo a medida), trazabilidad comercial, recall selectivo | Código, razón social, contacto, condiciones relevantes para el trabajo |
-| **Pedido** | Cuando el disparador de la ejecución es un compromiso con fecha | Código, cliente, ítems y cantidades, fecha comprometida, estado, prioridad |
+| **Cliente** | **Catálogo propio (master data)** | **Mínimo: código + denominación.** Sin contacto obligatorio, sin condiciones comerciales, sin precios |
+| **Compromiso del proyecto** | **NO es catálogo**: son **atributos de la Ejecución de perfil proyecto** ([execution.md](./execution.md)) | **Entregable + fecha objetivo + cliente** (referencia al catálogo de Clientes) |
 
-- El **Pedido es uno de los disparadores canónicos de la Ejecución** en el perfil proyecto (ver [work-model.md](./work-model.md) y [execution.md](./execution.md)). Sin pedidos, el disparador es manual o por plan.
-- En modo conectado, **el ERP manda de forma casi absoluta** sobre clientes y pedidos: son el terreno donde la fuente de verdad externa es más clara y menos discutible.
-- En modo standalone se admite una versión **deliberadamente pobre**: cliente y pedido mínimos, sin condiciones comerciales, sin precios, sin facturación. Nexo **no está construyendo un CRM ni un módulo de ventas**, y decirlo explícitamente es parte del control de alcance.
+- **Por qué no hay catálogo de Pedidos.** Un pedido propio arrastraría ítems, cantidades, estados, precios, prioridad y un ciclo de vida comercial completo: es la puerta de entrada a un módulo de ventas. El único dato que la ejecución necesita para trabajar a pedido es **qué hay que entregar, para cuándo y para quién** — y eso ya son tres campos de la Ejecución.
+- El **disparador** de una Ejecución de perfil proyecto es la **creación manual** (o el conector, cuando hay ERP): se elige el Proceso, se declara el entregable, la fecha objetivo y el cliente, y arranca. Ver [execution.md](./execution.md) §4.
+- En **modo conectado**, el ERP sigue mandando de forma casi absoluta sobre clientes y pedidos de venta: cuando existe conector, el pedido del ERP se correlaciona con la Ejecución por **referencia externa**, sin crear un catálogo local espejo.
+- Nexo **no está construyendo un CRM ni un módulo de ventas**, y decirlo explícitamente es parte del control de alcance.
 
-### 2.8 Centros de costo
+### 2.8 Centros de costo — **diferido a V1**
+
+> **Decisión cerrada (2026-07-13 — MOD-17).** **Los centros de costo NO entran al MVP.** Se difieren a V1 junto con las **tarifas de persona con vigencia** y el **costo de insumos con vigencia**. Consecuencia directa y aceptada: la **métrica de costo real** de [event-engine.md](./event-engine.md) **no está disponible en el MVP**. **El MVP mide TIEMPO y AVANCE, no costo.** Lo que sigue queda como definición funcional de referencia para V1, no como alcance del MVP.
 
 **Qué es:** la unidad contra la que se imputa el costo real derivado en [event-engine.md](./event-engine.md).
 
@@ -280,9 +289,9 @@ Valores **por defecto** en modo conectado, configurables por tenant:
 | **Unidades de medida** | **ERP** | La conversión debe ser idéntica en ambos sistemas o los números no cierran | No |
 | **Productos / Ítems** | **ERP** | Es el catálogo comercial y de inventario; duplicarlo genera doble alta | **Sí**: tiempo de ciclo, proceso por defecto, política de lote/serie |
 | **Insumos** | **ERP** | Igual que productos | **Sí**: unidad de consumo en planta, mermas de referencia |
-| **Centros de costo** | **ERP** | Debe alinear con contabilidad | **Sí**: tarifas de planta si el ERP no las expone |
+| **Centros de costo** _(V1)_ | **ERP** | Debe alinear con contabilidad | **Sí**: tarifas de planta si el ERP no las expone |
 | **Clientes** | **ERP** | Terreno indiscutido del ERP/CRM | No |
-| **Pedidos** | **ERP** | Compromiso comercial; Nexo lo ejecuta, no lo crea | **Sí**: prioridad de planta, secuenciación |
+| **Pedidos** _(no es catálogo de Nexo)_ | **ERP** | Compromiso comercial; Nexo lo ejecuta, no lo crea. En Nexo el compromiso son **atributos de la Ejecución de perfil proyecto** ([§2.7](#27-clientes-mínimo-y-el-compromiso-del-proyecto)); el pedido del ERP se correlaciona por **referencia externa**, sin catálogo espejo | — |
 | **Motivos (reason codes)** | **Configurable** | Muchos ERPs tienen catálogos pobres de motivos; Nexo suele ser más rico | Sí |
 | **Procesos** | **Nexo** | El ERP no modela tareas, evidencia ni criterios de terminación | — |
 | **Personas (operativo)** | **Nexo** | Disponibilidad, competencia y tarifa de planta rara vez están en el ERP | — |
@@ -384,7 +393,7 @@ En modo standalone, la calidad de la implantación depende casi enteramente de e
 | **Simulación antes de aplicar** | El usuario ve el resultado —qué se crea, qué se actualiza, qué se rechaza— **antes** de confirmar. Nunca una importación aplica de forma directa e irreversible |
 | **Reporte de errores accionable** | Por fila y por columna, con el motivo en lenguaje de negocio y la corrección sugerida. Un archivo con errores se devuelve corregible, no se descarta entero |
 | **Idempotencia por clave natural** | Reimportar el mismo archivo **actualiza**, no duplica. La clave es el código del registro |
-| **Orden de dependencias** | El asistente impone el orden correcto: unidades → productos/insumos → procesos → personas/centros de costo → clientes/pedidos. Importar productos sin unidades falla de entrada |
+| **Orden de dependencias** | El asistente impone el orden correcto. En el MVP: unidades → productos/insumos → personas → procesos → clientes. Importar productos sin unidades falla de entrada |
 | **Trazabilidad de la carga** | Toda importación queda auditada: quién, cuándo, qué archivo, qué filas creó y actualizó. El archivo original se conserva en Files/Media como evidencia |
 
 ### 6.2 Flujo de importación
@@ -412,10 +421,10 @@ flowchart LR
 | 2 | Jerarquía física (plantas, líneas, activos) | Los eventos necesitan dueño físico |
 | 3 | Productos e insumos | Sujeto de la producción y del consumo |
 | 4 | Personas y roles | Necesarios para asignar |
-| 5 | Procesos y tareas | El mayor esfuerzo; requiere todo lo anterior |
-| 6 | Centros de costo y tarifas | Habilitan la métrica de costo real |
-| 7 | Clientes y pedidos (si aplica) | Solo si el disparador es comercial |
-| 8 | Motivos y turnos | Refinan tiempos muertos y clasificación |
+| 5 | Procesos y tareas (con DAG) | El mayor esfuerzo; requiere todo lo anterior |
+| 6 | Clientes (mínimo) | Solo si se va a trabajar con perfil proyecto; el compromiso se declara en la Ejecución |
+| 7 | Motivos y turnos | Refinan tiempos muertos y clasificación |
+| 8 | _(V1)_ Centros de costo y tarifas | **Fuera del MVP.** Habilitan la métrica de costo real recién en V1 |
 
 > **Lectura de producto:** el paso 5 es el que consume más tiempo del cliente y donde más se juega la adopción. Un cliente que no modela sus procesos no obtiene progreso, ni cuellos de botella, ni tiempos muertos — es decir, no obtiene el producto.
 
@@ -456,18 +465,31 @@ El brief lo pide con todas las letras y este documento lo cumple sin atenuantes:
 
 La única defensa razonable contra este costo es **recortar deliberadamente**, y dejar el recorte por escrito.
 
-| Catálogo | Propuesta para el MVP | Recorte explícito |
-|---|---|---|
-| **Unidades de medida** | Semilla estándar + alta simple + conversión dentro de la misma magnitud | Sin conversiones complejas ni unidades compuestas |
-| **Productos / Ítems** | Código, denominación, unidad base, política de lote/serie, tiempo de ciclo | Sin variantes, sin familias multinivel, sin listas de materiales completas |
-| **Insumos** | Código, denominación, unidad, costo unitario con vigencia | Sin gestión de stock, sin proveedores, sin compras |
-| **Procesos** | Completo (es el core de la Capa 2) | Alcance del DAG según decisión de [work-model.md](./work-model.md) |
-| **Personas y roles** | Persona operativa + rol + tarifa | Sin gestión de RRHH, sin competencias ni certificaciones |
-| **Centros de costo** | Plano (sin jerarquía) + tarifa con vigencia | Sin estructura contable jerárquica |
-| **Clientes y pedidos** | **Fuera del MVP** salvo que el piloto sea perfil proyecto | Sin condiciones comerciales, sin precios, sin facturación |
-| **Importador CSV** | Solo para unidades, productos, insumos y personas | Los procesos se cargan por interfaz, no por CSV, en el MVP |
+> **Decisión cerrada (2026-07-13 — MOD-17): el mínimo viable del MVP es SIN COSTO.** Esta ya no es una propuesta a validar: es el alcance congelado. La regla que ordena todo el recorte es una sola — **el MVP mide TIEMPO y AVANCE, no costo**. Toda ampliación de esta tabla es un **cambio de alcance formal**.
 
-> **Lo que Nexo NO va a construir, y conviene decirlo desde ahora:** no es un ERP, no gestiona stock, no gestiona compras, no gestiona ventas ni facturación, no es un CRM y no es un sistema de RRHH. Posee los catálogos **mínimos para ejecutar y medir trabajo en planta**. Cada pedido de ampliación de master data debe medirse contra esa frontera.
+**Lo que ENTRA al MVP:**
+
+| Catálogo | Alcance exacto en el MVP | Recorte explícito |
+|---|---|---|
+| **Unidades de medida** | Semilla estándar + alta simple + **conversión dentro de la misma magnitud** | Sin conversiones entre magnitudes, sin unidades compuestas |
+| **Productos / Ítems** | **Código + denominación + unidad base + política de lote/serie + tiempo de ciclo** | Sin costo estándar, sin centro de costo por defecto, sin variantes, sin familias multinivel, sin listas de materiales completas |
+| **Procesos** | **Completo, con DAG** (es el core de la Capa 2). Grafo dirigido acíclico completo: ramas paralelas, tipos de precedencia y lags, con validación de ciclos (decisión **MOD-18**, ver [work-model.md](./work-model.md)) | — |
+| **Personas y roles** | **Persona operativa + rol** | **Sin tarifa horaria**, sin gestión de RRHH, sin competencias ni certificaciones |
+| **Insumos** | **Código + denominación + unidad — SIN COSTO** | Sin costo unitario ni vigencias, sin gestión de stock, sin proveedores, sin compras |
+| **Clientes** | **Mínimo: código + denominación** | Sin contactos obligatorios, sin condiciones comerciales, sin precios, sin facturación |
+| **Compromiso del proyecto** | **No es catálogo:** entregable + fecha objetivo + cliente son **atributos de la Ejecución de perfil proyecto** ([execution.md](./execution.md)) | Sin catálogo de Pedidos, sin ítems/cantidades de pedido, sin estados comerciales, sin prioridad comercial |
+| **Importador CSV** | Solo **unidades, productos, insumos y personas** | **Los procesos se cargan por interfaz**, no por CSV. Clientes, por interfaz |
+
+**Lo que se DIFIERE a V1 (explícito, no olvidado):**
+
+| Diferido | Por qué se difiere | Consecuencia asumida |
+|---|---|---|
+| **Centros de costo** | Estructura contable; no aporta a medir tiempo ni avance | No hay imputación contable del trabajo en el MVP |
+| **Tarifas de persona con vigencia** | Requiere versionado por fecha de vigencia y valorización por fecha de ocurrencia | No hay costo de mano de obra en el MVP |
+| **Costo de insumos con vigencia** | Ídem: vigencias, valorización histórica, reglas de no-reescritura | El consumo se mide en **cantidad**, no en dinero |
+| **Métrica de costo real** | Es la consecuencia directa de los tres anteriores ([event-engine.md](./event-engine.md)) | **El MVP no muestra costo.** Muestra tiempo, avance, desvío, cuellos de botella y tiempos muertos |
+
+> **Lo que Nexo NO va a construir, y conviene decirlo desde ahora:** no es un ERP, **no gestiona stock, no gestiona compras, no gestiona ventas ni facturación, no es un CRM y no es un sistema de RRHH**. Posee los catálogos **mínimos para ejecutar y medir trabajo en planta**. Cada pedido de ampliación de master data debe medirse contra esa frontera.
 
 ### 7.4 Riesgo principal y mitigación
 
@@ -488,8 +510,8 @@ La única defensa razonable contra este costo es **recortar deliberadamente**, y
 | **[integrations.md](./integrations.md)** | **Enlace principal.** Define el conector, el ACL, el mapeo por tenant, la idempotencia por referencia externa, los patrones *pull/batch* para catálogos y el manejo de errores. Este documento define **qué catálogos** existen y **quién los gobierna**; `integrations.md` define **cómo viajan** |
 | **[layered-architecture.md](./layered-architecture.md)** | Establece el ERP como conector opcional y no como capa; este documento es su consecuencia obligatoria |
 | **[work-model.md](./work-model.md)** | Define el Proceso, la Tarea y el Insumo como entidades de la Capa 2; acá se los trata como master data (gobierno, carga, sincronización) |
-| **[execution.md](./execution.md)** | Consume los catálogos para instanciar ejecuciones; el Pedido es uno de sus disparadores |
-| **[event-engine.md](./event-engine.md)** | Consume unidades, productos, insumos, tarifas y centros de costo para derivar costo real; sin ellos, la métrica de costo no se muestra |
+| **[execution.md](./execution.md)** | Consume los catálogos para instanciar ejecuciones. **El compromiso del perfil proyecto (entregable + fecha objetivo + cliente) vive ahí, como atributos de la Ejecución**, no como catálogo de Pedidos |
+| **[event-engine.md](./event-engine.md)** | Consume unidades, productos e insumos para derivar tiempo y avance. Tarifas y centros de costo se difieren a V1, por lo que **la métrica de costo real no se muestra en el MVP** (MOD-17) |
 | **[digital-twin.md](./digital-twin.md)** | Posee la jerarquía física, que es master data pero con documento propio |
 | **[users-permissions.md](./users-permissions.md)** | Posee usuario, rol de acceso, RBAC/ABAC y scoping; acá vive solo la dimensión operativa de la persona |
 | **[data-model.md](./data-model.md)** | Modelo conceptual de las entidades y su residencia (DB del tenant); este documento agrega la dimensión de gobierno y modo de operación |
@@ -500,13 +522,13 @@ La única defensa razonable contra este costo es **recortar deliberadamente**, y
 
 ## Preguntas abiertas
 
-1. **Mínimo viable de catálogos en el MVP:** ¿se acepta el recorte propuesto en 7.3, en particular dejar **clientes y pedidos fuera del MVP** salvo que el piloto sea de perfil proyecto? (Pregunta abierta del brief.)
+1. ✅ **RESUELTA (2026-07-13 — MOD-17). Mínimo viable de catálogos en el MVP: SIN COSTO.** Entran unidades, productos/ítems, procesos (completo, con DAG), personas y roles, insumos **sin costo** y **clientes mínimos** (código + denominación). El **pedido no es catálogo propio**: el compromiso son **atributos de la Ejecución de perfil proyecto** (entregable + fecha objetivo + cliente). Se **difieren a V1** centros de costo, tarifas de persona con vigencia, costo de insumos con vigencia y la **métrica de costo real**. **El MVP mide tiempo y avance, no costo.** Detalle en [§7.3](#73-cómo-se-acota-el-mínimo-viable-de-catálogos).
 2. **Fuente de verdad por entidad y por tenant:** ¿la matriz de precedencia de 4.2 se adopta como configuración por defecto, o cada implantación la negocia de cero? ¿Quién tiene la potestad de cambiarla: el administrador del tenant o el implantador?
 3. **Alta al vuelo desde la captura:** ¿se habilita en el MVP con estado borrador y aprobación posterior, o se difiere por completo a V1 para proteger la calidad del catálogo?
 4. **Conciliación al conectar un ERP:** ¿el emparejamiento por denominación se ofrece como sugerencia automática, o solo se admite el emparejamiento por código para evitar vínculos erróneos silenciosos?
-5. **Tarifas y costos:** ¿Nexo mantiene tarifas propias siempre, o cuando hay ERP conectado se toman de él? ¿Qué pasa si el ERP no expone tarifas horarias de planta (caso muy frecuente)?
+5. **Tarifas y costos (diferido a V1 por MOD-17):** con costo fuera del MVP, la pregunta se posterga pero no desaparece. Al abrir V1: ¿Nexo mantiene tarifas propias siempre, o cuando hay ERP conectado se toman de él? ¿Qué pasa si el ERP no expone tarifas horarias de planta (caso muy frecuente)?
 6. **Producto e insumo como roles del mismo ítem:** ¿se adopta el modelo unificado de 2.3, o se mantienen catálogos separados con un puente explícito para semielaborados?
-7. **Alcance del importador CSV en el MVP:** ¿qué catálogos son importables y cuáles solo por interfaz? ¿Se ofrece exportación completa del master data (requisito habitual de portabilidad y de salida)?
+7. ✅ **RESUELTA en su parte de alcance (2026-07-13 — MOD-17).** El importador CSV del MVP cubre **unidades, productos, insumos y personas**; **los procesos se cargan por interfaz**. Queda abierto un punto acotado: ¿se ofrece **exportación completa** del master data (requisito habitual de portabilidad y de salida) desde el MVP o en V1?
 8. **Pricing en modo standalone:** ¿el plan sin ERP cuesta lo mismo, más (por mayor esfuerzo de implantación) o menos (por menor superficie integrada)? Se conecta con COM-01 en el [tablero de decisiones](../open-questions-board.md).
 9. **Extensiones de catálogo por tenant:** ¿se admiten atributos personalizados definidos por el cliente desde el MVP, o se difieren? Su impacto sobre importación, sincronización y reportes es considerable.
 10. **Multi-ERP y gobierno:** cuando un tenant active dos conectores, ¿se prohíbe por completo que compitan por una entidad, o se admite un reparto por catálogo con validación previa? (Alineado con la pregunta abierta #4 de [integrations.md](./integrations.md).)

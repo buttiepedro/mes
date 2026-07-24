@@ -2,7 +2,7 @@
 
 > **Documento:** `design/07-security.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-11
 > **Roles:** Software Architect · Tech Lead
-> **Relacionados:** [00-tech-baseline.md](./00-tech-baseline.md) · [01-multi-tenancy-connection.md](./01-multi-tenancy-connection.md) · [02-event-model.md](./02-event-model.md) · [05-edge-agent.md](./05-edge-agent.md) · [08-observability-ops.md](./08-observability-ops.md) · [../specs/specs/security.md](../specs/specs/security.md) · [../specs/specs/users-permissions.md](../specs/specs/users-permissions.md) · [../specs/specs/multi-tenancy.md](../specs/specs/multi-tenancy.md) · [../specs/specs/control-plane.md](../specs/specs/control-plane.md) · [../specs/specs/devices.md](../specs/specs/devices.md)
+> **Relacionados:** [00-tech-baseline.md](./00-tech-baseline.md) · [01-multi-tenancy-connection.md](./01-multi-tenancy-connection.md) · [02-event-model.md](./02-event-model.md) · [05-edge-agent.md](./05-edge-agent.md) · [08-observability-ops.md](./08-observability-ops.md) · [../specs/specs/security.md](../specs/specs/security.md) · [../specs/specs/users-permissions.md](../specs/specs/users-permissions.md) · [../specs/specs/multi-tenancy.md](../specs/specs/multi-tenancy.md) · [../specs/specs/control-plane.md](../specs/specs/control-plane.md) · [../specs/specs/devices.md](../specs/specs/devices.md) · [../specs/specs/master-data.md](../specs/specs/master-data.md) · [../specs/specs/event-engine.md](../specs/specs/event-engine.md)
 
 ## Resumen ejecutivo
 
@@ -27,6 +27,12 @@ Los pilares del diseño son:
    revocación por dispositivo sin afectar al resto del tenant.
 6. **Aislamiento por diseño**: DB-per-tenant (proyecto Neon por tenant) + validación de `tenant_id` en cada capa
    (gateway, pipeline MediatR, EF Core, MSK, S3), defensa en profundidad.
+7. **Gobierno de la master data propia** (§4.6): con el **ERP opcional**, los catálogos son de la plataforma, y aparece
+   un **eje de permisos nuevo** — quién administra cada catálogo, quién aprueba las **altas al vuelo** y quién resuelve
+   los **conflictos de conciliación** con el ERP.
+8. **Control de acceso a la evidencia** (§5.4): la evidencia es parte del hecho, y a menudo el dato más sensible del
+   sistema (fotos con personas, documentos, firmas). Acceso por scope + alcance de planta, entrega por **URL prefirmada**
+   de vida corta y **aislamiento por tenant en S3** con CMK propia.
 
 El alcance es **diseño**: diagramas, tablas de políticas/scopes y **ejemplos ilustrativos** de claims y políticas
 ASP.NET Core. La implementación completa vive en el código de `Nexo.Identity` y `Nexo.BuildingBlocks.Web`.
@@ -465,6 +471,12 @@ Traducción de la [Matriz de permisos §5.2](../specs/specs/users-permissions.md
 | Auditoría | `GET /v1/audit/**` | `audit:read` ★ | Admin, Supervisor★, … | Nadie `U/D` (P6) |
 | Usuarios (tenant) | `POST /v1/users` | `identity:admin` | **Solo Administrador** | — |
 | Config (sites/líneas) | `PUT /v1/config/lines/{id}` | `config:write` ★ | Administrador (+delegación) | — |
+| **Master data** | `POST /v1/masterdata/{catalog}` | `masterdata:{catalog}:write` | Según catálogo (§4.6) | Deny-by-default por catálogo, no un permiso único |
+| **Master data** | `POST /v1/masterdata/drafts/{id}:approve` | `masterdata:draft:approve` | Supervisor, Administrador | Aprobación de **alta al vuelo** (§4.6.3); SoD: aprobador ≠ autor |
+| **Master data** | `POST /v1/masterdata/conflicts/{id}:resolve` | `masterdata:conflict:resolve` | Integraciones, Administrador | Conciliación con ERP (§4.6.4); **step-up** |
+| **Master data** | `PUT /v1/masterdata/governance/{catalog}` | `masterdata:governance` | **Solo Administrador** | Cambia la fuente de verdad de un catálogo; **step-up** + auditoría |
+| **Evidencia** | `GET /v1/evidence/{id}:url` | `evidence:read` ★† | Según sensibilidad (§5.4) | Devuelve **URL prefirmada** de vida corta, nunca el binario por el API |
+| **Evidencia** | `POST /v1/evidence` | `evidence:write` ★ | Operario★, Supervisor, Calidad, agente edge | Escritura por prefirmada contra el prefijo del tenant |
 
 **Control Plane (roles globales):** scopes con prefijo `cp:` (`cp:tenants:admin`, `cp:licensing`, `cp:observability`,
 `cp:break-glass`). Emitidos en tokens **sin `tenant_id`**; el acceso a dato operativo requiere **break-glass** (§7).
@@ -477,6 +489,106 @@ Traducción de la [Matriz de permisos §5.2](../specs/specs/users-permissions.md
   (`sub = svc_...`).
 - **Nunca** reutilizan credenciales de un administrador humano (P1). El token porta `tenant_id` y `scopes` reducidos.
 - **Edge:** ver §6 (mTLS + token cert-bound por dispositivo).
+
+### 4.6 Administración de master data (eje de permisos nuevo)
+
+Con el **ERP opcional** y la **master data propia** de la plataforma
+([`master-data.md`](../specs/specs/master-data.md)), aparece un eje de permisos que antes no existía: cuando los
+catálogos eran espejos de solo lectura del ERP, no había nada que autorizar. Ahora el tenant **da de alta y edita sus
+propios catálogos**, y eso abre tres decisiones de autorización distintas que **no** deben resolverse con un único
+permiso de "administrador".
+
+> **Principio:** administrar un catálogo **no** es una acción operativa. Cambiar una unidad de medida o una tarifa
+> altera cómo se interpretan **todos** los eventos futuros —y, si se hiciera mal, la lectura del negocio entero—.
+> Por eso el eje es **por catálogo**, no por módulo, y es **deny-by-default** como todo lo demás (P7).
+
+#### 4.6.1 Scopes por catálogo
+
+Un scope por catálogo y por verbo, `masterdata:{catalog}:{read|write}`. La granularidad por catálogo es deliberada: el
+riesgo de que Producción cargue un producto **no** es el mismo que el de que cargue una tarifa horaria.
+
+| Catálogo | Scope de escritura | Rol que lo porta por defecto | Por qué ese rol |
+|---|---|---|---|
+| **Unidades de medida** | `masterdata:uom:write` | **Solo Administrador** | Base de toda cuantificación; una conversión mal cargada corrompe cada número de la plataforma |
+| **Productos / Ítems** | `masterdata:item:write` | Administrador, Producción | Es el sujeto de la producción; Producción necesita autonomía para no frenar la planta |
+| **Insumos** | `masterdata:item:write` | Administrador, Producción | Comparten identidad de ítem con productos ([`master-data.md`](../specs/specs/master-data.md) §2.3) |
+| **Procesos y tareas** | `masterdata:process:write` | Administrador, Supervisor | Define tiempos estándar, pesos y **evidencia requerida**: cambia el denominador de las métricas |
+| **Personas (dimensión operativa)** | `masterdata:people:write` | Administrador | Roza datos personales; se separa del alta de **usuario de acceso** (`identity:admin`) |
+| **Centros de costo y tarifas** | `masterdata:cost:write` | **Solo Administrador** | Dato económico sensible; ver 4.6.2 |
+| **Clientes y pedidos** | `masterdata:customer:write` | Administrador, Producción | Opcional por tenant; en modo conectado suele quedar solo lectura |
+| **Motivos (reason codes)** | `masterdata:reason:write` | Administrador, Supervisor, Calidad | Cada dominio conoce sus motivos |
+| **Jerarquía física (activos)** | `config:write` ★ | Administrador (+delegación) | Ya cubierto por el scope de configuración (§4.4); sujeto a scoping de planta |
+| **Gobierno del catálogo** | `masterdata:governance` | **Solo Administrador** | Cambiar la fuente de verdad de un catálogo (Nexo ↔ ERP) es la decisión más peligrosa del eje: **step-up** obligatorio |
+
+- **Scoping de planta:** los catálogos son **del tenant**, no de una planta, así que la mayoría **no** lleva `★`. La
+  excepción es la jerarquía física, que sí se scopea por planta/línea. Un supervisor de una planta no debería poder
+  reescribir el catálogo de productos de toda la empresa: cuando el tenant lo exija, el scope se acota por ABAC
+  (regla de propiedad de catálogo, ver DS-10).
+- **Lectura amplia, escritura angosta:** `masterdata:*:read` lo porta todo rol con actividad operativa (hay que poder
+  elegir un producto para declarar producción); la escritura es la que se reparte con cuidado.
+
+#### 4.6.2 Datos económicos: tarifas y costos
+
+Las tarifas y los costos unitarios **valorizan el trabajo** ([`event-engine.md`](../specs/specs/event-engine.md) §7.6) y
+son, junto con la evidencia, el dato más sensible del tenant.
+
+- **Scope propio** (`masterdata:cost:write`), **nunca** incluido en roles operativos.
+- **Sin edición destructiva:** los atributos económicos se **versionan con vigencia**, no se editan
+  ([`master-data.md`](../specs/specs/master-data.md) R7). Técnicamente, el endpoint de edición **no existe**: solo hay
+  alta de una nueva versión con fecha de vigencia. Esto elimina por diseño el ataque de "cambiar la tarifa para
+  reescribir el costo histórico".
+- **Auditoría reforzada:** toda alta de vigencia registra `sub`, valor anterior, valor nuevo, fecha de vigencia y
+  motivo. Es una acción de las que se revisan en un litigio.
+
+#### 4.6.3 Alta al vuelo desde la captura
+
+El operario declara un ítem, un motivo o un insumo que no existe en el catálogo. Sin control, esto convierte el
+catálogo en un basurero de duplicados en semanas ([`master-data.md`](../specs/specs/master-data.md) §5.1).
+
+| Regla | Diseño técnico |
+|---|---|
+| **Desactivada por defecto** | Feature flag por tenant y **por catálogo**; el default es `off` |
+| **Nunca crea un maestro definitivo** | El alta al vuelo crea un registro en estado **borrador**, no seleccionable por otros usuarios y no válido para valorización |
+| **Permiso propio** | `masterdata:draft:create` — lo porta el Operario; **no** implica `masterdata:{catalog}:write` |
+| **Aprobación con separación de funciones** | `masterdata:draft:approve` (Supervisor / Administrador). **El aprobador no puede ser el autor**: se valida `sub(aprobador) ≠ sub(autor)` como regla ABAC, igual que la confirmación de producción (§4.4) |
+| **Caducidad** | Un borrador no aprobado dentro de una ventana se **archiva** y su evento queda marcado como "pendiente de normalizar" |
+| **Auditoría** | Alta, aprobación y rechazo se auditan con autor, aprobador, catálogo y motivo del rechazo |
+
+```csharp
+// Ilustrativo — separación de funciones en la aprobación de un alta al vuelo
+o.AddPolicy("MasterData.Draft.Approve", p =>
+{
+    p.AddRequirements(new ScopedRequirement("masterdata:draft:approve"));
+    p.RequireAssertion(ctx =>
+    {
+        var approver = ctx.User.FindFirst("sub")?.Value;
+        var draft    = ctx.Resource as IMasterDataDraft;
+        return draft is not null && draft.CreatedBy != approver;   // SoD: aprobador ≠ autor
+    });
+});
+```
+
+#### 4.6.4 Conflictos de conciliación con el ERP
+
+Al **conectar un ERP a un tenant que ya venía operando standalone**
+([`master-data.md`](../specs/specs/master-data.md) §3.3.1), la conciliación produce vínculos dudosos y registros
+divergentes que **alguien tiene que resolver a mano**. Es una acción de altísimo impacto: vincular mal dos ítems
+mezcla la historia de dos productos.
+
+| Acción | Scope | Rol | Salvaguarda |
+|---|---|---|---|
+| Ver la **bandeja de conflictos** | `masterdata:conflict:read` | Integraciones, Administrador, Supervisor (lectura) | — |
+| **Confirmar un vínculo** propuesto por código exacto | `masterdata:conflict:resolve` | Integraciones, Administrador | Auditado |
+| **Confirmar un vínculo** propuesto por denominación (inferido) | `masterdata:conflict:resolve` | Integraciones, Administrador | **Nunca automático**: confirmación humana explícita ([`master-data.md`](../specs/specs/master-data.md) §3.3.1) |
+| **Cambiar la fuente de verdad** de un catálogo | `masterdata:governance` | **Solo Administrador** | **Step-up** (§2.3) + notificación al tenant |
+| **Desconectar el ERP** (volver a standalone) | `masterdata:governance` + `connectors:sync` | **Solo Administrador** | Step-up; el dato **se retiene**, nunca se borra |
+
+- **La cuenta de servicio del conector NO resuelve conflictos.** El rol Integraciones como **cuenta de servicio**
+  (§4.5) tiene `connectors:sync` para sincronizar, pero la resolución de un conflicto es una **decisión humana**: se
+  exige un `sub` de persona, no `svc_*`. Un conector que resolviera conflictos solo podría hacerlo "en favor del ERP",
+  que es exactamente lo que [`master-data.md`](../specs/specs/master-data.md) R3 prohíbe.
+- **Step-up en el cambio de mapeo ERP** ya estaba previsto en §2.3; acá se extiende al **cambio de gobierno de un
+  catálogo**, que es su equivalente de mayor alcance.
 
 ---
 
@@ -557,6 +669,75 @@ flowchart LR
   la retención; ver [control-plane.md](../specs/specs/control-plane.md) y Preguntas abiertas de la spec).
 - **BYOK** para enterprise queda como **DS-05** (Decisión pendiente).
 
+### 5.4 Control de acceso a la evidencia (Files / Media)
+
+La **evidencia es ciudadano de primera clase del evento**
+([`event-engine.md`](../specs/specs/event-engine.md) §5): el binario (foto, archivo, firma, frame de cámara) vive en
+Files/Media y el evento porta **solo la referencia**. Esa separación es también la línea de defensa: **el binario nunca
+viaja por el API de negocio**, y el permiso sobre el evento **no** implica permiso sobre su evidencia.
+
+#### 5.4.1 Por qué la evidencia necesita su propio régimen
+
+| Riesgo | Por qué es distinto del resto del dato |
+|---|---|
+| **Personas en el encuadre** | Una foto de un puesto o un frame de cámara puede captar operarios: es dato personal, con régimen de finalidad y retención declarado ([`digital-twin.md`](../specs/specs/digital-twin.md) §6.2) |
+| **Documentos sensibles** | Certificados, planos, especificaciones de cliente, actas firmadas: propiedad intelectual del tenant o de su cliente |
+| **Firmas** | Sustentan responsabilidad y no repudio; su exposición habilita suplantación |
+| **Volumen y superficie** | Es el único dato que sale del sistema como **objeto descargable**, con URL propia — la superficie de fuga más ancha |
+
+#### 5.4.2 Reglas de acceso
+
+1. **Deny-by-default con scope propio.** Leer evidencia requiere `evidence:read`, que **no** viene incluido en
+   `traceability:read` ni en los scopes de dominio. Un rol puede ver que una tarea se terminó y **no** poder ver la foto.
+2. **Alcance de planta/línea (`★`).** El scoping se evalúa contra el **activo de contexto** de la evidencia, que
+   siempre existe por el invariante de binding ([`digital-twin.md`](../specs/specs/digital-twin.md) §5). Sin activo no
+   hay evidencia servible.
+3. **Clasificación de sensibilidad por tipo (ABAC, `†`).** Cada artefacto declara su clase; la clase decide si basta el
+   scope o hace falta algo más:
+
+   | Clase | Ejemplos | Requisito adicional |
+   |---|---|---|
+   | `operational` | Foto de avance, frame de conteo | Solo `evidence:read` + alcance |
+   | `quality` | Foto de punto de control, medición de inspección | `evidence:read` + alcance; retención larga |
+   | `personal` | Encuadre que puede captar personas | Finalidad declarada + acceso restringido a Supervisor/Calidad/Administrador; auditoría reforzada |
+   | `contractual` | Firmas, actas, certificados, documentos de conformidad | `evidence:read` + **step-up** para descarga; auditoría con `jti` |
+
+4. **Entrega solo por URL prefirmada de vida corta.** El API devuelve una **URL prefirmada** (minutos, no horas) contra
+   el prefijo S3 del tenant; **nunca** el binario por el endpoint de negocio ni una URL permanente. La emisión de cada
+   URL se **audita** (quién, qué artefacto, cuándo, con qué motivo).
+5. **Escritura igualmente acotada.** La subida (operario, app de piso o **agente edge**, ver
+   [05 §5.5](./05-edge-agent.md)) usa una prefirmada de escritura contra el prefijo del tenant, con `Content-Length` y
+   tipo MIME acotados. **Ningún cliente porta credenciales de S3.**
+6. **Inmutabilidad.** Los objetos de evidencia son **write-once**: no se sobrescriben ni se borran por API. Reemplazar
+   una foto es **agregar** otra con su evento de corrección ([`event-engine.md`](../specs/specs/event-engine.md) §5.3).
+   Se apoya en versionado + *object lock* donde el régimen del cliente lo exija.
+7. **Integridad verificable.** La referencia porta el **hash** del artefacto, calculado en el punto de captura; se
+   revalida al recibir y al servir. Un hash que no coincide **no** se sirve: se reporta como incidente de integridad.
+
+#### 5.4.3 Aislamiento por tenant en S3
+
+```mermaid
+flowchart LR
+    U["Usuario / Agente edge\nJWT(tenant_id=acme) + evidence:read"] --> API["Nexo.Files\n1) scope  2) alcance de planta\n3) clase de sensibilidad (ABAC)"]
+    API -->|"4) emitir prefirmada\nTTL corto + audit"| URL["URL prefirmada\ns3://.../tenants/acme/evidence/..."]
+    URL --> S3[("S3 · prefijo del tenant\nSSE-KMS con CMK de acme")]
+    API -.->|"IAM (IRSA) con Condition\ns3:prefix = tenants/acme/*"| S3
+    API -.->|"registro de emision"| AUD["Auditoría del tenant (§8)"]
+    S3 -. "sin acceso" .-x OTRO[("tenants/otro-cliente/")]
+```
+
+- **Prefijo exclusivo por tenant** (`tenants/<tenant_id>/`), ya modelado en el Registry
+  ([01 §6.3](./01-multi-tenancy-connection.md)). La policy IAM del servicio lleva `Condition` sobre el prefijo del
+  tenant **resuelto en el request**: una prefirmada para otro tenant es **imposible de emitir**, no solo indebida.
+- **CMK por tenant** (§5.3): además del aislamiento lógico, el cifrado por cliente habilita **crypto-shredding** en el
+  offboarding — destruir la clave inutiliza toda la evidencia de ese tenant de una sola vez.
+- **Sin listado cruzado:** el servicio nunca hace `ListBucket` fuera del prefijo del tenant; los identificadores de
+  artefacto son **opacos** (no enumerables ni derivables del id de evento).
+- **Retención por clase**, alineada con [`event-engine.md`](../specs/specs/event-engine.md) §5.5: firmas y documentos
+  con retención larga; frames de cámara con retención corta y **promoción** a larga solo si el evento se asocia a un
+  defecto, una parada o una disputa. La política de retención de artefactos `personal` se coordina con la pregunta
+  abierta de privacidad de [`digital-twin.md`](../specs/specs/digital-twin.md) (ver **DS-11**).
+
 ---
 
 ## 6. Seguridad del edge
@@ -634,6 +815,7 @@ flowchart TB
 | **Datos** | **Proyecto Neon por tenant**: la cadena de conexión resuelta apunta a **otra base física** | Consulta jamás cruza al dato de otro tenant |
 | **Mensajería** | Key de partición = `tenant_id`; consumers validan `tenant_id` del envelope | Fuga entre streams / noisy neighbor |
 | **Storage** | Prefijo/bucket por tenant + credenciales de alcance limitado + **CMK por tenant** | Bucket cruzado |
+| **Evidencia** | Prefirmadas de vida corta emitidas **solo** contra el prefijo del tenant resuelto + identificadores opacos + scope `evidence:read` (§5.4) | Descarga de evidencia de otro cliente o enumeración de artefactos |
 | **Secretos** | IAM (IRSA) acotado por ruta/tag de tenant | Lectura de secreto ajeno |
 | **Control Plane** | Sin `tenant_id`; nunca dato operativo; break-glass auditado | Cuenta global no ve dato del cliente por defecto |
 
@@ -684,6 +866,10 @@ Referencia STRIDE entre paréntesis.
 | T13 | Token robado / replay (Spoofing) | Bearer interceptado o filtrado | Vida corta, **cert-bound** (edge/kiosco), `aud` estricta, revocación por `sid`/`jti`/`device_id` (§3) |
 | T14 | Confusión de tenant (Elevation of Privilege) | Token de tenant A hacia recurso de tenant B | Coherencia `tenant_id`==host + validación de coherencia usuario/recurso/tenant antes de autorizar (§4, §7) |
 | T15 | Escalada de privilegios ABAC (E.o.P.) | Editar fuera de ventana/propiedad | **AbacBehavior** en MediatR con reglas de ventana/propiedad/turno/estado/criticidad (§4.2) |
+| T16 | **Manipulación de la master data** (Tampering) | Cambiar una tarifa, una unidad o una conversión para alterar costo, productividad o progreso ya reportados | Scope **por catálogo** (§4.6.1), datos económicos **versionados con vigencia** sin endpoint de edición (§4.6.2), histórico que **no se recalcula** ([`master-data.md`](../specs/specs/master-data.md) R6/R7), auditoría con valor anterior/nuevo |
+| T17 | **Contaminación del catálogo** (Tampering/DoS funcional) | Alta al vuelo abusiva que llena el catálogo de duplicados y degrada toda la analítica | Alta al vuelo **off por defecto**, estado borrador no valorizable, **aprobación con SoD** y caducidad (§4.6.3) |
+| T18 | **Resolución indebida de conflictos de conciliación** (E.o.P.) | Vincular dos ítems distintos al conectar el ERP, mezclando la historia de dos productos | Confirmación **humana** obligatoria (nunca `svc_*`), `masterdata:conflict:resolve` separado de `connectors:sync`, **step-up** en cambio de gobierno, auditoría (§4.6.4) |
+| T19 | **Fuga de evidencia** (Information Disclosure) | URL prefirmada larga o compartida, enumeración de artefactos, foto con personas servida a quien no corresponde | Prefirmadas de **minutos** + identificadores opacos + `evidence:read` con alcance y **clase de sensibilidad** ABAC + step-up para `contractual` + auditoría de cada emisión (§5.4) |
 
 ---
 
@@ -700,6 +886,9 @@ Referencia STRIDE entre paréntesis.
 | DS-07 | **Break-glass y residencia de datos** (Soporte global vs. regionalizado) | Pregunta abierta 7 de [users-permissions.md](../specs/specs/users-permissions.md) | Break-glass global auditado; regionalizar según residencia en V1 |
 | DS-08 | **Roles personalizados por tenant** (composición de scopes) | Pregunta abierta 1 de [users-permissions.md](../specs/specs/users-permissions.md) | Catálogo cerrado de 8 roles en MVP; custom en fase avanzada |
 | DS-09 | **Plan de respuesta a incidentes / notificación de brechas** | Pregunta abierta 7 de [security.md](../specs/specs/security.md) | Runbook base en [08](./08-observability-ops.md); formalizar en V1 |
+| DS-10 | **¿Los scopes de master data se acotan por planta?** | §4.6.1; un supervisor de una planta editando el catálogo de toda la empresa | MVP: catálogos **del tenant**, sin scoping de planta (salvo jerarquía física); regla ABAC de propiedad de catálogo si un tenant lo exige. Coordinar con pregunta abierta 2 de [master-data.md](../specs/specs/master-data.md) |
+| DS-11 | **Régimen de la evidencia `personal`** (encuadres que captan personas) | §5.4.2; pregunta abierta 11 de [digital-twin.md](../specs/specs/digital-twin.md) y 6 de [event-engine.md](../specs/specs/event-engine.md) | Finalidad declarada por punto de visión + acceso restringido + retención corta por defecto; formalizar régimen legal en V1 (ligado a DS-01) |
+| DS-12 | **Alta al vuelo en el MVP** | §4.6.3; pregunta abierta 3 de [master-data.md](../specs/specs/master-data.md) | **Off por defecto**; si se habilita, borrador + aprobación con SoD. Confirmar si entra al MVP o se difiere a V1 |
 
 ---
 
@@ -711,5 +900,7 @@ Referencia STRIDE entre paréntesis.
 - **[02-event-model.md](./02-event-model.md):** envelope, `dedup_key`, particiones por `tenant_id`.
 - **[05-edge-agent.md](./05-edge-agent.md):** agente edge, store-and-forward, OTA.
 - **[08-observability-ops.md](./08-observability-ops.md):** auditoría/observabilidad correlacionadas, health del edge, DR.
+- **[../specs/specs/master-data.md](../specs/specs/master-data.md):** catálogos propios, modos standalone/conectado, precedencia y conciliación — origen del eje de permisos de §4.6.
+- **[../specs/specs/event-engine.md](../specs/specs/event-engine.md):** la evidencia como parte del evento, tipos y retención — origen del régimen de §5.4.
 - **[../specs/specs/security.md](../specs/specs/security.md)** y **[../specs/specs/users-permissions.md](../specs/specs/users-permissions.md):** requisitos funcionales que este diseño implementa.
 - **[../specs/specs/multi-tenancy.md](../specs/specs/multi-tenancy.md)** · **[../specs/specs/control-plane.md](../specs/specs/control-plane.md)** · **[../specs/specs/devices.md](../specs/specs/devices.md).**

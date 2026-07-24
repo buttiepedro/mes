@@ -2,7 +2,7 @@
 
 > **Documento:** `design/01-multi-tenancy-connection.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-11
 > **Roles:** Software Architect · Tech Lead
-> **Relacionados:** [00-tech-baseline.md](./00-tech-baseline.md) · [02-event-model.md](./02-event-model.md) · [03-data-schema.md](./03-data-schema.md) · [07-security.md](./07-security.md) · [08-observability-ops.md](./08-observability-ops.md) · [../specs/specs/multi-tenancy.md](../specs/specs/multi-tenancy.md) · [../specs/specs/control-plane.md](../specs/specs/control-plane.md)
+> **Relacionados:** [00-tech-baseline.md](./00-tech-baseline.md) · [02-event-model.md](./02-event-model.md) · [03-data-schema.md](./03-data-schema.md) · [07-security.md](./07-security.md) · [08-observability-ops.md](./08-observability-ops.md) · [../specs/specs/multi-tenancy.md](../specs/specs/multi-tenancy.md) · [../specs/specs/control-plane.md](../specs/specs/control-plane.md) · [../specs/specs/master-data.md](../specs/specs/master-data.md)
 
 ## Resumen ejecutivo
 
@@ -15,7 +15,8 @@ que aloja el **Tenant Connection Registry**.
 El corazón del diseño es el **connection schema**: el modelo de datos del Registry, el formato de la cadena de
 conexión de Neon (endpoint `-pooler` con PgBouncer vs. endpoint directo) y la regla de oro de que el Registry guarda
 **solo la referencia** al secreto (un ARN de AWS Secrets Manager), **nunca** la credencial en claro. Sobre esa base
-se definen: el **provisioning** de un tenant como **saga** de 7 pasos idempotente y con compensación; la **resolución
+se definen: el **provisioning** de un tenant como **saga** de 7 pasos idempotente y con compensación —cuyo paso de
+**seed** ahora carga la **master data semilla** que permite operar **sin ERP** desde el día uno (§2.5)—; la **resolución
 de tenant por request** (host/subdominio o claim `tenant_id` del JWT → Registry con caché → `DbContext`), y su
 propagación por MediatR, EF Core, MassTransit y los logs; las **migraciones across-tenants** por cohortes con feature
 flags y objetivo zero-downtime; el **backup/DR y offboarding** apoyados en PITR y branching de Neon con borrado
@@ -269,7 +270,7 @@ Control Plane ([`control-plane.md`](../specs/specs/control-plane.md) §3).
 | 3a | Crear database/role | Neon API `POST .../databases` + `POST .../roles` (rol `nexo_app` mínimo privilegio) | Cubierto por delete del proyecto |
 | 3b | Guardar secreto + registrar | `PutSecretValue` (URI pooled/direct + password) → `secret_arn`; `UPDATE tenant_connection` con endpoints/ARN | `DeleteSecret`; limpiar coordenadas |
 | 4 | Migraciones EF | Job de migración contra **endpoint directo**; setea `schema_version` | Idempotente; borrado del proyecto revierte |
-| 5 | Seed | Seed **idempotente** (Reason Codes, roles, UoM, turnos base) | Idempotente; no requiere compensación |
+| 5 | Seed | Seed **idempotente** de la **master data semilla**: unidades de medida estándar, roles base, motivos (reason codes), turnos base **y los catálogos propios inicializados y listos para operar sin ERP** (ver §2.5) | Idempotente; no requiere compensación |
 | 6 | Usuario admin (Identity) | Llamada a **Duende/`Nexo.Identity`**: crea usuario admin del tenant + invitación | Deshabilitar/eliminar usuario admin |
 | 7 | Activar | `status='active'`, `lifecycle_state='active'`, `activated_at`; publicar `TenantProvisioned`; notificar bienvenida | — |
 
@@ -302,7 +303,8 @@ sequenceDiagram
     TP->>REG: (3b) UPDATE endpoints + secret_arn + s3_prefix
     TP->>MIG: (4) Aplicar migraciones EF (endpoint DIRECTO)
     MIG-->>TP: schema_version = N
-    TP->>MIG: (5) Seed idempotente (catálogos base)
+    TP->>MIG: (5) Seed idempotente de MASTER DATA SEMILLA
+    Note over MIG: Unidades estándar + roles base + motivos + turnos<br/>+ catálogos propios inicializados (productos, insumos,<br/>procesos, personas, centros de costo) en modo standalone
     TP->>IDP: (6) Crear usuario admin del tenant + invitación
     IDP-->>TP: admin_user_id
     TP->>REG: (7) status=active, schema_version=N, activated_at
@@ -383,6 +385,40 @@ public sealed class TenantProvisioningStateMachine : MassTransitStateMachine<Pro
   [`control-plane.md`](../specs/specs/control-plane.md) §8), habilitando **reintento** o descarte.
 - **Timeouts / poison:** si la saga excede un SLA, se agenda un `ProvisioningTimeout` que dispara compensación y alerta
   a Observability. Los mensajes irrecuperables van a **error queue** (MassTransit) para intervención manual.
+
+### 2.5 Paso 5 en detalle — seed de master data semilla
+
+Con el **ERP opcional** y la **master data propia** de la plataforma
+([`master-data.md`](../specs/specs/master-data.md)), el seed deja de ser "cuatro catálogos de configuración" y pasa a
+ser **la condición para que el tenant pueda operar el día uno en modo standalone**. Un tenant recién provisionado tiene
+que poder cargar su planta, modelar un proceso y capturar producción **sin ningún conector activo**.
+
+| Bloque del seed | Qué se crea | Por qué es imprescindible |
+|---|---|---|
+| **Unidades de medida** | Juego estándar por magnitud (SI + conteo + tiempo) con unidad base y factores de conversión | Todo lo demás las referencia; sin unidades, ningún número de la plataforma es interpretable ([`master-data.md`](../specs/specs/master-data.md) §2.4) |
+| **Roles base** | Los roles canónicos del tenant (Administrador, Supervisor, Producción, Calidad, Mantenimiento, Integraciones, Gerencia, Operario) con sus scopes | El admin creado en el paso 6 necesita un rol existente; sin roles no hay delegación posible ([`07-security.md`](./07-security.md) §4) |
+| **Motivos (reason codes)** | Catálogo mínimo de paradas, scrap y defectos | Downtime/Scrap/Quality exigen catálogo; los códigos libres no se admiten |
+| **Turnos y calendario** | Turno único 24 h por defecto, editable | Sin ventana planificada no hay tiempo muerto medible |
+| **Catálogos propios inicializados** | Productos/ítems, insumos, procesos, personas, centros de costo y clientes: **vacíos pero operables** — tabla creada, gobierno declarado (`fuente de verdad = Nexo`), plantilla CSV disponible y ABM habilitado | Es la diferencia entre "el catálogo no existe" y "el catálogo está vacío": el segundo se puede llenar el mismo día, el primero requiere una migración |
+| **Modo de operación del tenant** | `operation_mode = standalone` y **gobierno por catálogo** con fuente de verdad = Nexo para todos | El modo es **por entidad**, no por tenant ([`master-data.md`](../specs/specs/master-data.md) §3.2); conectar un ERP después solo cambia esas declaraciones, no destruye el dato |
+
+**Reglas del seed:**
+
+- **Idempotente por clave natural** (código del registro), no por *insert* ciego: reejecutar el paso 5 tras un
+  reintento de la saga **actualiza**, no duplica. Igual criterio que el importador CSV
+  ([`master-data.md`](../specs/specs/master-data.md) §6.1).
+- **Semilla ≠ dato del cliente.** Los registros semilla se marcan como tales para poder distinguirlos en soporte y
+  para no confundir "catálogo vacío" con "catálogo sin cargar". El tenant puede archivarlos, nunca se le imponen.
+- **Orden de dependencias obligatorio:** unidades → jerarquía física → roles/personas → motivos/turnos → resto de
+  catálogos. Sembrar productos antes que unidades falla de entrada.
+- **Sin compensación:** si el seed falla, la compensación efectiva es el borrado del proyecto Neon (paso 2). No existe
+  un "des-seed" parcial.
+- **El seed no crea jerarquía física ni procesos de negocio.** Crea el marco; la planta, las líneas, los activos y los
+  procesos los carga el implantador o el cliente (asistente de implantación de
+  [`master-data.md`](../specs/specs/master-data.md) §6.3).
+
+> **Consecuencia operativa:** el criterio de aceptación del alta de tenant deja de ser "la DB responde" y pasa a ser
+> **"un usuario puede entrar y declarar producción sin ERP"**. Ese es el nuevo *definition of done* del paso 7.
 
 ---
 
@@ -772,6 +808,7 @@ flowchart TB
 | Tenant Connection Registry con **solo referencia** al secreto | §1.1, §1.2, §1.4 |
 | Resolución por host + claim `tenant_id`, coherencia | §3.1, §3.2 |
 | Alta en 7 pasos | §2 (saga) |
+| Master data semilla en el alta: tenant operable **sin ERP** desde el día uno | §2.1 (paso 5), §2.5 |
 | Migraciones versionadas/idempotentes por cohortes + feature flags + zero-downtime + estado observable | §4 |
 | Backup/restore por tenant, PITR, recuperación granular | §5.1 |
 | Baja lógica/definitiva, borrado seguro | §5.2 |

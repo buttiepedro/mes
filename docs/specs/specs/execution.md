@@ -14,6 +14,8 @@ La Ejecución **generaliza** el concepto de `production_run` ("Corrida de produc
 
 La Ejecución tiene **dos sabores** con **un solo esqueleto**: **Lote (Batch)**, cuando el objetivo es una **cantidad** de un producto y el trabajo es repetible; y **Proyecto (Project)**, cuando el objetivo es un **entregable único** con **fecha objetivo** e **hitos**. Comparten estado, tareas instanciadas, asignación, tiempos, consumo real, avance, evidencia y cierre. Difieren en el disparador, el objetivo, el criterio de completitud y el set de KPIs. Esa es la contracara operativa de la tesis de la Capa 2: **un proyecto único y una producción repetitiva se ejecutan igual; solo cambia el disparador**.
 
+> ✅ **Decisión cerrada (2026-07-13).** **PRD-16: los dos sabores entran al MVP** —Lote (perfil repetitivo) y Proyecto (perfil proyecto)—, en modelo, UI y KPIs. **MOD-17: el compromiso del proyecto (entregable + fecha objetivo + cliente) son atributos de la Ejecución**, no un catálogo de Pedidos. **MOD-18: el Proceso instanciado es un DAG completo** (ramas paralelas, tipos de precedencia y lags). Y una consecuencia que atraviesa todo el documento: **el MVP mide tiempo y avance, no costo** — el costo real se difiere a V1 ([`master-data.md`](./master-data.md) §7.3).
+
 Finalmente, la Ejecución es **el contextualizador universal del dato**. Un evento sin ejecución es un dato huérfano: se puede almacenar, pero no se puede interpretar. Por eso la regla dura de esta capa es que **todo evento productivo debe poder imputarse a una tarea instanciada**, y cuando no puede, queda explícitamente marcado como **pendiente de imputación** en lugar de perderse o de contaminar los KPIs.
 
 ---
@@ -82,9 +84,10 @@ flowchart LR
 | **Estado** | Ciclo de vida de [§6](#6-ciclo-de-vida-y-estados). | ✔ | ✔ |
 | **Disparador** | Tipo + referencia al objeto que la originó ([§4](#4-disparadores)). | ✔ | ✔ |
 | Objetivo | Cantidad objetivo + Producto/SKU. | ✔ | — |
-| Entregable | Descripción del entregable único + cliente/contrato. | — | ✔ |
+| **Entregable** | Descripción del entregable único. **Atributo de la Ejecución** (no hay catálogo de Pedidos). | — | ✔ **Obligatorio** |
+| **Cliente** | Referencia al catálogo mínimo de Clientes (código + denominación, [`master-data.md`](./master-data.md) §2.7). **Atributo de la Ejecución.** | Opcional | ✔ **Obligatorio** |
 | Fechas planificadas | Inicio y fin previstos (de la programación). | ✔ | ✔ |
-| Fecha objetivo / compromiso | Fecha comprometida con el cliente. | Opcional | ✔ |
+| **Fecha objetivo / compromiso** | Fecha comprometida con el cliente. **Atributo de la Ejecución.** | Opcional | ✔ **Obligatorio** |
 | Fechas reales | Inicio y fin efectivos (derivados de eventos). | ✔ | ✔ |
 | Alcance físico | Planta / Sector / Línea / Activos involucrados (Capa 1). | ✔ | ✔ |
 | **Tareas instanciadas** | Copia viva de las tareas del Proceso ([§3](#3-tarea-instanciada)). | ✔ | ✔ |
@@ -171,7 +174,7 @@ El disparador es **lo único que distingue estructuralmente a un lote de un proy
 | **Plan / programa de producción** | Repetitivo | Lote | Planificación interna | Secuencia, fechas, mix de productos |
 | **Reposición de stock / punto de pedido** | Repetitivo | Lote | Master data + inventario | Cantidad a reponer |
 | **Regla automática** | Repetitivo | Lote | [`rules-engine.md`](./rules-engine.md) | Condición que la disparó |
-| **Contrato / pedido único del cliente** | Proyecto | **Proyecto** | Comercial (o ERP si hay conector) | Cliente, entregable, fecha comprometida, hitos, precio |
+| **Contrato / pedido único del cliente** | Proyecto | **Proyecto** | Comercial (o ERP si hay conector) | Cliente, entregable, fecha comprometida, hitos. **No hay catálogo de Pedidos en Nexo:** estos datos se **declaran como atributos de la Ejecución** al crearla (MOD-17); el precio queda fuera del MVP |
 | **Presupuesto aprobado** | Proyecto | Proyecto | Comercial | Alcance y condiciones |
 | **Orden de trabajo de mantenimiento** | Repetitivo o proyecto | Según el caso | Mantenimiento | Activo, criticidad, ventana |
 | **Creación manual** | Cualquiera | Cualquiera | Supervisor / planner | Todo a mano (siempre disponible, incluso sin ERP) |
@@ -209,6 +212,8 @@ flowchart TB
 
 ## 5. Los dos sabores: Lote y Proyecto
 
+> ✅ **Decisión cerrada (2026-07-13 — PRD-16): AMBOS sabores entran al MVP.** El MVP soporta el perfil **repetitivo** —ejecución de sabor **Lote**— y el perfil **proyecto** —ejecución de sabor **Proyecto**—, no solo en el modelo de datos sino también en la **UI** y en los **KPIs** de cada uno. Queda descartada la variante "modelo sí, UI no": el sabor Proyecto **no** se difiere a V1. La definición del piloto ya no condiciona el alcance de esta capa.
+
 ### 5.1 Lote (Batch)
 
 **Cuándo.** El trabajo produce **una cantidad** de un producto conocido, es repetible y se mide contra un ritmo esperado.
@@ -232,8 +237,10 @@ flowchart TB
 - **Duración típica:** de días a meses.
 - **Relación con turnos:** débil. Importa el calendario y la disponibilidad de personas, no el turno de máquina.
 - **Trazabilidad:** consume lotes de insumo; produce un entregable identificable (no necesariamente serializado).
-- **KPIs:** % de avance, desvío de cronograma, ruta crítica, hitos cumplidos, costo real vs. estimado.
+- **KPIs:** % de avance, desvío de cronograma, ruta crítica, hitos cumplidos. *(El **costo real vs. estimado** se difiere a V1 por MOD-17: el MVP mide tiempo y avance, no costo.)*
 - **Ejemplo:** *Ejecución PRY-2026-012 — Frente vidriado Obra Torre Callao, Proceso `PRC-OBRA-FV` v1.0, entrega comprometida 30/11, 3 hitos.*
+
+> ✅ **El compromiso del proyecto vive acá, no en un catálogo (2026-07-13 — MOD-17).** **No existe un catálogo de Pedidos en Nexo.** Los tres datos que definen el compromiso —**entregable**, **fecha objetivo** y **cliente**— son **atributos de la Ejecución de perfil proyecto** ([§2.2](#22-atributos-de-la-ejecución)). El **cliente** es la única pieza que sí es master data, y en su forma mínima (código + denominación, ver [`master-data.md`](./master-data.md) §2.7). Consecuencia práctica: para arrancar un proyecto no hay que dar de alta un pedido previo — se crea la Ejecución, se elige el Proceso y se declaran entregable, fecha objetivo y cliente. Cuando hay conector ERP, el pedido de venta del ERP se **correlaciona por referencia externa** con la Ejecución, sin crear un catálogo local espejo.
 
 ### 5.3 Tabla comparativa: qué comparten y en qué difieren
 
@@ -780,11 +787,11 @@ Permisos específicos de la capa: `ejecucion.ver`, `ejecucion.crear`, `ejecucion
 2. **Formalización de `production_run`.** Confirmar que la **Ejecución** reemplaza y generaliza a `production_run` en [`data-model.md`](./data-model.md) y en el esquema técnico ([`../../design/03-data-schema.md`](../../design/03-data-schema.md), decisión DS-01/MOD-01), y definir la ruta de convivencia con lo ya implementado.
 3. **Método de avance por defecto.** ¿Híbrido (tareas ponderadas + avance parcial de la tarea en curso) para ambos sabores, o por cantidad en Lote y por tareas en Proyecto? Impacta la comparabilidad entre ejecuciones.
 4. **Ejecución sin Proceso.** ¿Se permite una ejecución "libre" (sin plantilla, solo tareas ad-hoc) para trabajos improvisados, o se exige siempre un Proceso, aunque sea de una sola tarea?
-5. **Sabores en el MVP.** ¿El MVP incluye el sabor Proyecto o solo Lote? Depende de la definición del piloto (ver PRD-02 en [`open-questions-board.md`](../open-questions-board.md)).
+5. ✅ **RESUELTA (2026-07-13 — PRD-16). Sabores en el MVP: AMBOS.** El MVP incluye el sabor **Lote** (perfil repetitivo) **y** el sabor **Proyecto** (perfil proyecto), con su UI y sus KPIs. Además, el **compromiso del proyecto** (entregable + fecha objetivo + cliente) son **atributos de la Ejecución**, no un catálogo de Pedidos (MOD-17, ver [§5.2](#52-proyecto-project)).
 6. **Turnos en el sabor Proyecto.** ¿Se aplica el calendario de turnos a las ejecuciones de proyecto (montaje en obra), o se usa un calendario de personas/recursos distinto?
 7. **Imputación de tiempo en equipos.** Cuando una cuadrilla trabaja una tarea, ¿el tiempo se declara por persona, se prorratea automáticamente, o se imputa al equipo como unidad?
 8. **Migración de versión con ejecución abierta.** ¿Se ofrece migración asistida a una versión superior del Proceso, y con qué reglas para tareas ya iniciadas?
-9. **Costeo de la ejecución.** ¿El costo real (consumo + mano de obra) se calcula en la Capa 4 desde el MVP, o se difiere hasta tener master data de costos consolidada ([`master-data.md`](./master-data.md))?
+9. ✅ **RESUELTA (2026-07-13 — MOD-17). Costeo de la ejecución: diferido a V1.** El costo real (consumo + mano de obra) **no se calcula en el MVP**: centros de costo, tarifas de persona con vigencia y costo de insumos con vigencia se difieren a V1 ([`master-data.md`](./master-data.md) §7.3). El MVP registra **consumo en cantidad** y **tiempo real**, y mide **avance**. Queda abierto el diseño del costeo al abrir V1.
 10. **Reserva de insumos.** ¿La programación **reserva** insumos (compromete stock) o solo verifica disponibilidad? En modo standalone esto exige un modelo de inventario propio.
 11. **Bandeja de pendientes de imputación.** ¿Quién la revisa, con qué frecuencia y qué pasa con lo que nunca se imputa (se descarta, se agrega a una ejecución "genérica", queda como no atribuido en los KPIs)?
 12. **Sync de proyectos con el ERP.** Con conector activo, ¿un proyecto se mapea a un pedido de venta, a un proyecto del ERP, o no se mapea y solo se reportan costos? Impacta [`integrations.md`](./integrations.md) y la decisión INT-01.

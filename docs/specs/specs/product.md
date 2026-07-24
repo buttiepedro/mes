@@ -70,7 +70,7 @@ Personas del **tenant** (clientes) y roles **globales** del proveedor. El modelo
 | **Supervisor** | Coordina turno/línea | No sabe qué pasa hasta el final del turno; apagar incendios tarde | Ver el turno en vivo, detectar desvíos y actuar en el momento |
 | **Calidad** | Controles e inspecciones | Checklists en papel; defectos sin trazar; SPC manual | Inspecciones digitales, defectos trazados, calidad medida con FPY |
 | **Producción** | Planifica y cumple órdenes (perfil repetitivo) | Avance real desconocido; órdenes desincronizadas con la gestión | Avance en tiempo real por orden/máquina/turno, sincronizado con ERP si lo hay |
-| **Responsable de proyecto / obra** | Conduce trabajos únicos a medida (construcción, metalmecánica, ETO) | Avance estimado "a ojo"; desvíos de cronograma y sobrecostos que se descubren al cierre; evidencia dispersa en fotos y WhatsApp | Avance calculado sobre hechos, ruta crítica, hitos, costo real vs. estimado y evidencia por tarea |
+| **Responsable de proyecto / obra** | Conduce trabajos únicos a medida (construcción, metalmecánica, ETO) | Avance estimado "a ojo"; desvíos de cronograma y sobrecostos que se descubren al cierre; evidencia dispersa en fotos y WhatsApp | Avance calculado sobre hechos, ruta crítica, hitos y evidencia por tarea desde el MVP; **costo real vs. estimado en V1** |
 | **Mantenimiento** | Disponibilidad de máquinas | Paradas mal registradas; sin MTBF/MTTR confiable | Paradas capturadas con motivo, MTBF/MTTR reales, alertas |
 | **Gerencia** | Decisión y resultados | KPIs poco confiables y tardíos; sin visión consolidada | OEE, scrap rate y productividad confiables y en vivo, multi-planta |
 | **Administrador (del tenant)** | Administra la cuenta de la empresa | Alta de usuarios, plantas, dispositivos; gobierno interno | Configurar la organización, usuarios/roles, plantas y límites del plan |
@@ -97,13 +97,13 @@ Personas del **tenant** (clientes) y roles **globales** del proveedor. El modelo
 | **Supervisor** | "Ves tu turno en vivo y actuás a tiempo." Estado de líneas, alertas de desvío y paradas en curso. |
 | **Calidad** | "Calidad medible y trazable." Inspecciones digitales, defectos catalogados, FPY y disposición de material. |
 | **Producción** | "Sabés el avance real y, si tenés ERP, se entera solo." Producción por orden/máquina/turno, con sync opcional a Odoo. |
-| **Responsable de proyecto / obra** | "El avance ya no se estima: se mide." Tareas con precedencias, hitos, evidencia obligatoria por tarea, desvío de cronograma y costo real vs. estimado. |
+| **Responsable de proyecto / obra** | "El avance ya no se estima: se mide." Tareas con precedencias (DAG), hitos, evidencia obligatoria por tarea y desvío contra la fecha objetivo — **desde el MVP**. El **costo real vs. estimado** llega en **V1**. |
 | **Mantenimiento** | "Disponibilidad con números reales." Paradas con motivo, MTBF/MTTR y alertas de reglas. |
 | **Gerencia** | "Decidís con datos confiables, no con supuestos." OEE, scrap rate, avance y productividad consolidados multi-planta y multi-proyecto. |
 | **Administrador** | "Gobernás tu empresa en la plataforma." Usuarios, roles, plantas, dispositivos, catálogos propios y límites del plan. |
 | **Integraciones** | "Integrás sin dolor y con visibilidad." Conectores, mapeos y jobs de sync observables y con reintentos — **solo si el tenant usa ERP**. |
 
-Las fórmulas de KPI (OEE, Disponibilidad, Rendimiento, Calidad, Scrap Rate, FPY, MTBF, MTTR) son **canónicas y consistentes** en toda la plataforma (ver [dashboards.md](./dashboards.md), [production.md](./production.md), [downtime.md](./downtime.md), [quality.md](./quality.md)) y **se aplican al perfil repetitivo**; el perfil proyecto usa % de avance, desvío de cronograma, ruta crítica e hitos. Tiempos muertos, cuellos de botella, productividad por recurso y costo real vs. estimado son comunes a ambos perfiles (ver [event-engine.md](./event-engine.md)).
+Las fórmulas de KPI (OEE, Disponibilidad, Rendimiento, Calidad, Scrap Rate, FPY, MTBF, MTTR) son **canónicas y consistentes** en toda la plataforma (ver [dashboards.md](./dashboards.md), [production.md](./production.md), [downtime.md](./downtime.md), [quality.md](./quality.md)) y **se aplican al perfil repetitivo**; el perfil proyecto usa % de avance, desvío de cronograma, ruta crítica e hitos. Tiempos muertos y cuellos de botella son comunes a ambos perfiles **desde el MVP**; **productividad por recurso y costo real vs. estimado son de V1** (el MVP no calcula costo, ver §7.1 y [event-engine.md](./event-engine.md)).
 
 ---
 
@@ -142,16 +142,23 @@ Los dominios de negocio capturados sobre estos pilares son **Producción (perfil
 
 ### 7.1 Dentro del MVP (canónico)
 
-- **Master data propia mínima:** productos/ítems, insumos, unidades de medida, procesos y personas/roles, con carga manual y por CSV — condición para operar **sin ERP** (ver [master-data.md](./master-data.md)).
+> **Decisiones cerradas el 2026-07-13 que fijan este alcance:** **PRD-16** (el MVP soporta **ambos perfiles**: repetitivo/Lote y proyecto/Proyecto), **MOD-18** (**DAG completo** de tareas) y **MOD-17** (**master data mínima SIN costo**). Ver §7.2 y el [tablero de decisiones](../open-questions-board.md).
+
+- **Ambos perfiles de trabajo (PRD-16):** ejecución de perfil **Lote** (repetitivo) y de perfil **Proyecto** (trabajo único a medida) sobre el mismo modelo de Proceso/Tarea/Insumo. El **compromiso del proyecto** —entregable, fecha objetivo y cliente— son **atributos de la Ejecución de perfil proyecto**, no un catálogo de pedidos.
+- **DAG completo de tareas (MOD-18):** ramas paralelas, **tipos de precedencia** y **validación de ciclos** desde el MVP, en el modelo y en la API. El **editor visual** del grafo llega en V1; en el MVP la edición es por formulario/lista.
+- **Master data propia mínima — SIN costo (MOD-17):** unidades de medida, productos/ítems, **procesos (con su DAG)**, personas y roles, **insumos sin costo** y **clientes (mínimo)**. Es la condición para operar **sin ERP** (ver [master-data.md](./master-data.md)).
+- **Importador CSV acotado:** solo **unidades, productos, insumos y personas**. El resto se carga por ABM.
 - **Gemelo digital básico:** jerarquía Empresa→Planta→Sector→Línea→Activo, con señales ligadas a activos (ver [digital-twin.md](./digital-twin.md)).
 - **Registrar:** Producción, Scrap, Controles de Calidad, Paradas y Eventos de máquina.
 - **Capturar desde:** carga manual (tablet) + datalogger vía carga de archivo/CSV/Excel.
-- **Formularios de captura en tablet** (UX de operario) — **caso estrella: Producción + dashboard** (perfil repetitivo).
-- **Dashboard en tiempo real.**
+- **Formularios de captura en tablet** (UX de operario) — **caso estrella: Producción + dashboard** (perfil repetitivo); el perfil proyecto suma el caso **avance de tarea → progreso de la ejecución**.
+- **Dashboard en tiempo real**, con KPIs por perfil: OEE y scrap rate para repetitivo; **% de avance, desvío contra la fecha objetivo e hitos** para proyecto.
 - **Integración con Odoo — opcional**, activable por tenant vía feature flag.
 - **Multi-tenant con base de datos por tenant.**
 - **Control Plane mínimo:** alta de tenant y licencias.
 - **Modo híbrido configurable (por planta):** en el MVP el híbrido se limita a **manual + datalogger/CSV**; el híbrido con **protocolos industriales** se vuelve real en V1.
+
+> **⛔ El MVP mide TIEMPO y AVANCE, no COSTO.** Toda la dimensión económica se **difiere a V1**: centros de costo, tarifas con vigencia, costo de insumos y la **métrica de costo real (real vs. estimado)**. Es una exclusión deliberada, no una omisión: es el recorte que financia la entrada de **ambos perfiles** y del **DAG completo** al MVP (ver §7.2 y [roadmap.md](../roadmap/roadmap.md) §2).
 
 ### 7.2 Impacto en el alcance del pivot (declarado, no oculto)
 
@@ -159,13 +166,19 @@ El encuadre autónomo tiene un **costo de alcance real** que hay que asumir expl
 
 | Impacto | Qué cambia | Consecuencia |
 |---|---|---|
-| **Master data propia** | La plataforma debe poseer sus catálogos (productos/ítems, insumos, UoM, procesos, personas/roles, clientes y pedidos opcionales, centros de costo) en vez de tomarlos del ERP. | **Agranda el MVP.** Es el costo oculto más grande del pivot: suma modelo, ABM, carga por CSV, validaciones y gobierno de catálogos. |
+| **Master data propia** | La plataforma debe poseer sus catálogos en vez de tomarlos del ERP. **Acotada por MOD-17 al mínimo sin costo**: unidades, productos/ítems, procesos (con DAG), personas/roles, insumos **sin costo** y clientes (mínimo). | **Agranda el MVP**, pero menos de lo temido: suma modelo, ABM, importador CSV acotado (unidades/productos/insumos/personas) y validaciones. **Centros de costo, tarifas con vigencia y costo de insumos quedan fuera** — ver §7.3. |
 | **Odoo deja de ser requisito (INT-01)** | El MVP debe funcionar y demostrarse **sin ERP**; el conector queda como feature opcional. | La decisión **INT-01** pasa a estado *a revisar* en el [tablero](../open-questions-board.md). |
 | **Pricing (COM-01)** | Hoy la base por planta incluye la integración Odoo como parte del valor. Sin ERP, ese componente no aplica y aparece un segmento nuevo (proyecto/obra) con otra estructura de uso. | **El pricing puede requerir revisión**: definir si la base por planta cambia, si el conector ERP se cobra como add-on y cómo se licencia el perfil proyecto. Decisión **COM-01** a revisar. |
-| **Dos perfiles de trabajo** | Repetitivo y proyecto comparten modelo pero difieren en disparador y KPIs. | Hay que decidir si el MVP soporta ambos o arranca solo con el repetitivo (ver Preguntas abiertas). |
+| **Dos perfiles de trabajo (PRD-16 — resuelto)** | Repetitivo y proyecto comparten modelo pero difieren en disparador y KPIs. **El MVP soporta ambos.** | **Agranda el MVP:** suma el compromiso del proyecto (entregable/fecha objetivo/cliente), hitos, % de avance y desvío de cronograma, y KPIs por perfil en el tablero. A cambio, duplica el mercado direccionable desde el día uno y libera la elección del piloto. |
+| **DAG completo de tareas (MOD-18 — resuelto)** | Las tareas se modelan como grafo dirigido acíclico: ramas paralelas, tipos de precedencia y validación de ciclos, desde el MVP. | **Agranda el MVP**, pero evita la migración de procesos y ejecuciones vivas que provocaría un modelo lineal. El **editor visual** se difiere a V1: entra el modelo, no la UI rica. |
+| **Costo diferido a V1 (MOD-17 — resuelto)** | Centros de costo, tarifas con vigencia, costo de insumos y métrica de **costo real** salen del MVP. | **Achica el MVP** y es lo que **compensa** los dos impactos anteriores. Consecuencia comercial: el MVP se vende y se demuestra sobre **tiempo y avance**; el discurso de "costo real vs. estimado" es promesa de V1, no de la primera entrega. |
 
 ### 7.3 Explícitamente fuera del MVP
 
+- **Toda la dimensión de costo (MOD-17) — diferida a V1:** **centros de costo**, **tarifas con vigencia**, **costo de insumos** y la **métrica de costo real (real vs. estimado)**. El MVP mide **tiempo y avance**.
+- **Catálogo de pedidos/órdenes de cliente:** el **compromiso** (entregable, fecha objetivo, cliente) vive como **atributo de la Ejecución de perfil proyecto**; no se construye un catálogo de pedidos en el MVP.
+- **Editor visual del grafo de tareas (DAG):** el modelo de DAG completo entra en el MVP; su edición visual llega en V1.
+- **Importador CSV más allá de unidades, productos, insumos y personas.**
 - IA / visión artificial y OCR.
 - Mantenimiento predictivo.
 - Marketplace público de conectores.
@@ -173,7 +186,7 @@ El encuadre autónomo tiene un **costo de alcance real** que hay que asumir expl
 - Gemelo digital **de simulación** (3D, física, *what-if*) — el gemelo **operativo** de Capa 1 sí entra en el MVP en su versión básica.
 - (Diferidos a V1/V2: **captura automática por protocolos industriales (Siemens S7, OPC UA, Modbus, MQTT)**, motor de reglas completo, notificaciones multicanal, reportes avanzados, trazabilidad lote/serie completa, RBAC avanzado, observabilidad avanzada — ver §11 y [roadmap.md](../roadmap/roadmap.md)).
 
-> **Principio de MVP:** el tenant **arranca sin ERP** con su master data mínima; el operario puede **cargar manual desde el día uno** (time-to-value inmediato) y sumar el **datalogger vía carga de archivo/CSV/Excel**; la **captura automática por protocolos industriales** llega en V1. **Demo end-to-end del MVP: producción manual → dashboard**, y **→ Odoo** solo cuando el conector opcional está activo.
+> **Principio de MVP:** el tenant **arranca sin ERP** con su master data mínima **sin costo**; el operario puede **cargar manual desde el día uno** (time-to-value inmediato) y sumar el **datalogger vía carga de archivo/CSV/Excel**; la **captura automática por protocolos industriales** llega en V1. **Demo end-to-end del MVP: producción manual → dashboard** (perfil lote) y **avance de tarea → progreso del proyecto** (perfil proyecto), y **→ Odoo** solo cuando el conector opcional está activo. **Lo que el MVP promete medir es tiempo y avance; el costo se promete para V1.**
 
 ---
 
@@ -276,8 +289,8 @@ Modelo **SaaS por suscripción** con dos ejes principales: una **suscripción ba
 
 | Capa | Contenido | Fase |
 |---|---|---|
-| **Captura base** | Master data propia, gemelo digital básico, procesos y ejecución, captura manual + datalogger/CSV, dashboard en tiempo real, multi-tenant; **Odoo opcional** | MVP |
-| **MES ligero** | Protocolos industriales (S7/OPC UA/Modbus/MQTT) + híbrido real, reglas, notificaciones, trazabilidad, reportes | V1 |
+| **Captura base** | Master data propia mínima **sin costo**, gemelo digital básico, procesos con **DAG completo** y ejecución en **ambos perfiles (lote y proyecto)**, captura manual + datalogger/CSV, dashboard en tiempo real con KPIs por perfil, multi-tenant; **Odoo opcional**. **Mide tiempo y avance, no costo.** | MVP |
+| **MES ligero** | Protocolos industriales (S7/OPC UA/Modbus/MQTT) + híbrido real, reglas, notificaciones, trazabilidad, reportes y **capa de costo** (centros de costo, tarifas, costo de insumos, costo real vs. estimado) | V1 |
 | **IA Enterprise** | IA/visión, mantenimiento predictivo, gemelo digital de simulación | Enterprise |
 
 > Las capas se habilitan por **feature flags** en el Control Plane; el **modo híbrido configurable** (manual + automático por planta) se cobra sumando la **base por planta** y los **dispositivos conectados**. Palancas complementarias: **Marketplace de conectores** (fase V2, revenue share a partners) y **servicios de implementación** (rol Implementador/Partner).
@@ -296,18 +309,18 @@ Alineada al roadmap canónico (MVP, V1, V2, Enterprise). Detalle, prioridades Mo
 
 | Módulo | MVP | V1 | V2 | Enterprise |
 |---|:---:|:---:|:---:|:---:|
-| Master Data (catálogos propios) | ● mínima viable | ◐ completa + sync ERP | ◐ | ◐ |
+| Master Data (catálogos propios) | ● mínima **sin costo** (unidades, productos, procesos, personas/roles, insumos sin costo, clientes mínimo) + CSV acotado | ● **capa de costo** (centros de costo, tarifas con vigencia, costo de insumos) + sync/conciliación ERP | ◐ | ◐ |
 | Gemelo digital (Capa 1) | ● básico | ◐ estado en vivo / calibración | ◐ | ● simulación |
-| Modelo de trabajo / Procesos (Capa 2) | ● repetitivo (+ proyecto a definir) | ● ambos perfiles + DAG completo | ◐ | ◐ |
-| Ejecución — Lote / Proyecto (Capa 3) | ● lote | ● proyecto (hitos, ruta crítica) | ◐ | ◐ |
-| Motor de eventos (Capa 4) | ● evento + progreso | ◐ cuellos de botella / tiempos muertos | ◐ costo real | ◐ |
+| Modelo de trabajo / Procesos (Capa 2) | ● **ambos perfiles + DAG completo** (ramas paralelas, tipos de precedencia, validación de ciclos) | ◐ editor visual del DAG + criterios de terminación | ◐ | ◐ |
+| Ejecución — Lote / Proyecto (Capa 3) | ● **lote y proyecto** (compromiso: entregable/fecha objetivo/cliente, hitos, % de avance) | ◐ reprogramación, ruta crítica avanzada | ◐ | ◐ |
+| Motor de eventos (Capa 4) | ● evento + progreso + tiempos muertos + cuellos de botella (**tiempo y avance, sin costo**) | ● **costo real vs. estimado** + productividad por recurso | ◐ | ◐ |
 | Ingesta de datos (manual + datalogger/CSV) | ● núcleo | ◐ + protocolos (S7/OPC UA/Modbus/MQTT) | ◐ | ◐ |
 | Dispositivos | ● básico | ◐ salud/OTA | ◐ | ◐ |
 | Producción | ● | ◐ | ◐ | ◐ |
-| Scrap | ● | ◐ | ◐ | ◐ |
+| Scrap | ● cantidad + motivo (**sin costo**) | ● + costo del scrap | ◐ | ◐ |
 | Calidad | ● | ◐ SPC/checklists | ◐ | ● IA/visión |
 | Paradas | ● | ◐ MTBF/MTTR | ◐ | ● predictivo |
-| Dashboards / Analytics | ● tiempo real | ◐ | ● analytics avanzado | ◐ |
+| Dashboards / Analytics | ● tiempo real, **KPIs por perfil** (OEE/scrap para lote; avance/desvío/hitos para proyecto) | ◐ + KPIs de costo | ● analytics avanzado | ◐ |
 | Integraciones (Odoo) — **opcional** | ◐ Odoo opcional | ◐ | ● multi-ERP (SAP/Dynamics/Oracle) | ◐ |
 | Multi-tenancy (DB-per-tenant) | ● | ◐ | ● distribución geográfica | ● alta disponibilidad multi-región |
 | Control Plane (alta tenant + licencias) | ● mínimo | ◐ | ◐ feature flags/despliegues | ● SLAs enterprise |
@@ -324,6 +337,8 @@ Alineada al roadmap canónico (MVP, V1, V2, Enterprise). Detalle, prioridades Mo
 
 > **Integraciones (ERP) es el único módulo del MVP marcado como opcional:** el producto debe poder demostrarse y venderse completo sin él.
 
+> **Nota de alcance (2026-07-13):** el MVP **creció** por dos decisiones —**ambos perfiles** (PRD-16) y **DAG completo** (MOD-18)— y **se recortó** por una tercera: **todo el costo se difiere a V1** (MOD-17). El recorte de costo es lo que compensa el crecimiento; no es un extra encima. La contrapartida honesta es que **la propuesta "costo real vs. estimado" no se puede vender como parte del MVP** — el MVP mide **tiempo y avance**.
+
 ---
 
 ## Preguntas abiertas
@@ -332,8 +347,8 @@ Alineada al roadmap canónico (MVP, V1, V2, Enterprise). Detalle, prioridades Mo
 2. **Precios y límites concretos:** los valores de la base por planta, el precio por dispositivo y los límites por usuarios/plantas son referenciales; falta validación comercial y su fijación en Control Plane.
 3. ✅ **Resuelto (2026-07-11):** los módulos se empaquetan **por capa vía feature flags** (Captura base → MES ligero V1 → IA Enterprise); los avanzados se habilitan como capa/add-on sobre la base por planta — ver [tablero de decisiones](../open-questions-board.md).
 4. ⚠️ **A revisar (2026-07-13) — COM-01:** el pricing distingue manual vs. automático (base por planta + precio por dispositivo). **Pendiente:** ¿cambia el pricing si el sistema se vende **sin ERP**? Definir si el conector ERP pasa a add-on, si la base por planta se recalibra y qué unidad de cobro aplica al **perfil proyecto** (planta vs. obra/proyecto activo) — ver §7.2 y [tablero de decisiones](../open-questions-board.md).
-5. **Alcance de perfiles en el MVP:** ¿el MVP soporta **ambos perfiles** (repetitivo y proyecto) o arranca solo con el repetitivo? Impacta directamente a PRD-02 (caso estrella) y a la elección del piloto.
-6. **Mínimo viable de master data propia:** ¿qué catálogos entran al MVP y cuáles se difieren? Es el mayor costo oculto del encuadre autónomo (ver §7.2 y [master-data.md](./master-data.md)).
+5. ✅ **Resuelto (2026-07-13) — PRD-16 y MOD-18:** el MVP soporta **ambos perfiles** (repetitivo/Lote y proyecto/Proyecto) y modela las tareas como **DAG completo** (ramas paralelas, tipos de precedencia, validación de ciclos); el **editor visual** del DAG queda en V1. La elección del piloto ya no está condicionada por el perfil — ver §7.1 y el [tablero de decisiones](../open-questions-board.md).
+6. ✅ **Resuelto (2026-07-13) — MOD-17:** la master data mínima del MVP es **sin costo** —unidades, productos/ítems, procesos (con DAG), personas y roles, insumos sin costo y clientes (mínimo)—, con **importador CSV solo para unidades/productos/insumos/personas**; el **pedido/compromiso es atributo de la Ejecución de perfil proyecto**, no un catálogo. **Centros de costo, tarifas con vigencia, costo de insumos y la métrica de costo real se difieren a V1** — ver §7.1, §7.3 y [master-data.md](./master-data.md).
 7. **Persona "Integraciones" en pymes chicas:** ¿existe ese rol en el segmento Starter o lo cubre el Administrador/Implementador? Se agudiza en modo standalone, donde el rol puede no existir.
 8. **Segmentación go-to-market del perfil proyecto:** ¿construcción, metalmecánica a medida e ingeniería bajo pedido se atacan desde el día uno o después de validar el repetitivo?
 9. **Métrica de NRR/retención:** objetivos de retención y expansión aún sin validar con datos reales.

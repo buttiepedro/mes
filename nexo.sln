@@ -1,4 +1,4 @@
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
@@ -23,6 +23,24 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Nexo.Production.Api", "src\Services\Nexo.Production\Nexo.Production.Api\Nexo.Production.Api.csproj", "{B1000000-0000-0000-0000-000000000010}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Nexo.Production.Tests", "tests\Nexo.Production.Tests\Nexo.Production.Tests.csproj", "{B1000000-0000-0000-0000-000000000011}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{1789C23A-03BB-472C-8899-A7C00F4A2C25}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Services", "Services", "{A6F31C10-EE8D-43F3-A8AC-3D4D9971809C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Nexo.MasterData", "Nexo.MasterData", "{B5723FB2-90A2-4AE1-9B2C-F7B809AC9451}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nexo.MasterData.Api", "src\Services\Nexo.MasterData\Nexo.MasterData.Api\Nexo.MasterData.Api.csproj", "{A1640F39-6CCC-45BD-942E-E7AD5BC465FB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nexo.MasterData.Application", "src\Services\Nexo.MasterData\Nexo.MasterData.Application\Nexo.MasterData.Application.csproj", "{543F088D-26A1-4B45-8378-AA1BEBB8548E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nexo.MasterData.Domain", "src\Services\Nexo.MasterData\Nexo.MasterData.Domain\Nexo.MasterData.Domain.csproj", "{AC040CC0-B402-4030-BB7C-016C0BB7E91C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nexo.MasterData.Infrastructure", "src\Services\Nexo.MasterData\Nexo.MasterData.Infrastructure\Nexo.MasterData.Infrastructure.csproj", "{B9CAE6C2-2050-42E8-9F41-05C70D2B589E}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7A0997D7-D3B4-43CB-8AD3-F0794E71900F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nexo.MasterData.Tests", "tests\Nexo.MasterData.Tests\Nexo.MasterData.Tests.csproj", "{BF88FBAE-60FB-4B3C-98B1-203DDF290148}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -74,8 +92,37 @@ Global
 		{B1000000-0000-0000-0000-000000000011}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B1000000-0000-0000-0000-000000000011}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B1000000-0000-0000-0000-000000000011}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1640F39-6CCC-45BD-942E-E7AD5BC465FB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1640F39-6CCC-45BD-942E-E7AD5BC465FB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1640F39-6CCC-45BD-942E-E7AD5BC465FB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1640F39-6CCC-45BD-942E-E7AD5BC465FB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{543F088D-26A1-4B45-8378-AA1BEBB8548E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{543F088D-26A1-4B45-8378-AA1BEBB8548E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{543F088D-26A1-4B45-8378-AA1BEBB8548E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{543F088D-26A1-4B45-8378-AA1BEBB8548E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AC040CC0-B402-4030-BB7C-016C0BB7E91C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AC040CC0-B402-4030-BB7C-016C0BB7E91C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AC040CC0-B402-4030-BB7C-016C0BB7E91C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AC040CC0-B402-4030-BB7C-016C0BB7E91C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B9CAE6C2-2050-42E8-9F41-05C70D2B589E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B9CAE6C2-2050-42E8-9F41-05C70D2B589E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B9CAE6C2-2050-42E8-9F41-05C70D2B589E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B9CAE6C2-2050-42E8-9F41-05C70D2B589E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BF88FBAE-60FB-4B3C-98B1-203DDF290148}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BF88FBAE-60FB-4B3C-98B1-203DDF290148}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BF88FBAE-60FB-4B3C-98B1-203DDF290148}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BF88FBAE-60FB-4B3C-98B1-203DDF290148}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{A6F31C10-EE8D-43F3-A8AC-3D4D9971809C} = {1789C23A-03BB-472C-8899-A7C00F4A2C25}
+		{B5723FB2-90A2-4AE1-9B2C-F7B809AC9451} = {A6F31C10-EE8D-43F3-A8AC-3D4D9971809C}
+		{A1640F39-6CCC-45BD-942E-E7AD5BC465FB} = {B5723FB2-90A2-4AE1-9B2C-F7B809AC9451}
+		{543F088D-26A1-4B45-8378-AA1BEBB8548E} = {B5723FB2-90A2-4AE1-9B2C-F7B809AC9451}
+		{AC040CC0-B402-4030-BB7C-016C0BB7E91C} = {B5723FB2-90A2-4AE1-9B2C-F7B809AC9451}
+		{B9CAE6C2-2050-42E8-9F41-05C70D2B589E} = {B5723FB2-90A2-4AE1-9B2C-F7B809AC9451}
+		{BF88FBAE-60FB-4B3C-98B1-203DDF290148} = {7A0997D7-D3B4-43CB-8AD3-F0794E71900F}
 	EndGlobalSection
 EndGlobal

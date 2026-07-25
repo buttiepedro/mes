@@ -36,3 +36,6 @@ Thumbs.db
 
 # Docker local data
 **/.data/
+
+# Logs del entorno local (run-local.ps1)
+.local-logs/

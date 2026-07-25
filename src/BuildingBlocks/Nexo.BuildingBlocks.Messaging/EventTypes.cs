@@ -27,6 +27,40 @@ public static class EventTypes
 
     public const string Process_VersionSuspended = "nexo.process.version_suspended";
 
+    // --- Execution (Capa 3) · lifecycle, consumption and progress -----------------------------
+
+    public const string Execution_Created = "nexo.execution.created";
+
+    public const string Execution_Started = "nexo.execution.started";
+
+    public const string Execution_Closed = "nexo.execution.closed";
+
+    public const string Execution_Cancelled = "nexo.execution.cancelled";
+
+    public const string Execution_InputConsumed = "nexo.execution.input_consumed";
+
+    public const string Execution_MilestoneReached = "nexo.execution.milestone_reached";
+
+    // --- Execution (Capa 3) · task-run facts (co-ordered with their execution) ----------------
+
+    public const string Task_Enabled = "nexo.task.enabled";
+
+    public const string Task_Assigned = "nexo.task.assigned";
+
+    public const string Task_Started = "nexo.task.started";
+
+    public const string Task_ProgressReported = "nexo.task.progress_reported";
+
+    public const string Task_Blocked = "nexo.task.blocked";
+
+    public const string Task_Unblocked = "nexo.task.unblocked";
+
+    public const string Task_Completed = "nexo.task.completed";
+
+    public const string Task_Skipped = "nexo.task.skipped";
+
+    public const string Task_EvidenceAttached = "nexo.task.evidence_attached";
+
     public const string MasterData_RecordUpserted = "nexo.masterdata.record_upserted";
 
     public const string MasterData_RecordArchived = "nexo.masterdata.record_archived";

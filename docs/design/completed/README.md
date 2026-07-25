@@ -30,6 +30,7 @@ verificó y qué decisiones se tomaron al bajar el diseño a código*.
 | [001](./001-scaffold-inicial.md) | Scaffold del monorepo + slice de Producción + infra local | ✅ Completado y verificado | 2026-07-13 | [00](../00-tech-baseline.md) · [03](../03-data-schema.md) · [04](../04-service-contracts.md) |
 | [002](./002-masterdata.md) | Servicio `Nexo.MasterData` (catálogos mínimos, MOD-17) | ✅ Completado y verificado | 2026-07-13 | [03](../03-data-schema.md) §2.5 · [04](../04-service-contracts.md) §2.5 |
 | [003](./003-workmodel.md) | Servicio `Nexo.WorkModel` (Capa 2 · Procesos + DAG, MOD-18) | ✅ Completado y verificado | 2026-07-24 | [03](../03-data-schema.md) §2.6 · [04](../04-service-contracts.md) §2.6 |
+| [004](./004-execution.md) | Servicio `Nexo.Execution` (Capa 3 · Lote y Proyecto, PRD-16) | ✅ Completado y verificado | 2026-07-25 | [03](../03-data-schema.md) §2.7-2.8 · [04](../04-service-contracts.md) §2.7 |
 
 ## Estado general del código
 
@@ -39,8 +40,13 @@ verificó y qué decisiones se tomaron al bajar el diseño a código*.
 | `Nexo.Production` | 3 (perfil repetitivo) | ✅ Scaffold verificado · outbox alineado ([003](./003-workmodel.md)) · modelo previo al pivot |
 | `Nexo.MasterData` | master data | ✅ Implementado y verificado ([002](./002-masterdata.md)) |
 | `Nexo.WorkModel` | 2 | ✅ Implementado y verificado ([003](./003-workmodel.md)) |
-| `Nexo.Execution` | 3 | 🔜 Siguiente |
+| `Nexo.Execution` | 3 | ✅ Implementado y verificado ([004](./004-execution.md)) |
 | `Nexo.Tenancy` · `Nexo.Identity` · `Nexo.Ingestion` · resto | varias | ⬜ Pendiente |
+
+> **Núcleo del modelo por capas (2→3) completo en código.** Con MasterData + WorkModel + Execution, la
+> cadena Proceso → Ejecución (lote y proyecto) está implementada y verificada. Lo que falta para un flujo
+> vivo end-to-end: el **motor de eventos (Capa 4)**, el **relay del outbox a Kafka** y la **integración
+> gRPC entre servicios** (hoy cada uno se verifica en aislamiento).
 
 ## Pendientes transversales acumulados
 

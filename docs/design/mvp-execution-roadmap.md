@@ -1,63 +1,149 @@
 # Roadmap de ejecución del MVP
 
 > **Documento:** `docs/design/mvp-execution-roadmap.md` · **Estado:** Activo · **Actualizado:** 2026-07-26
-> **Relacionados:** [design/completed/](./completed/README.md) · [roadmap.md](../specs/roadmap/roadmap.md) · [02-event-model.md](./02-event-model.md) · [04-service-contracts.md](./04-service-contracts.md)
+> **Relacionados:** [design/completed/](./completed/README.md) · [roadmap.md](../specs/roadmap/roadmap.md) (estratégico) · [02-event-model.md](./02-event-model.md) · [04-service-contracts.md](./04-service-contracts.md)
 
-Este documento es el **plan de ejecución concreto** para llevar lo ya construido (master data + Capas 2-3, verificadas) hasta un **MVP demostrable**. No repite el roadmap estratégico ([roadmap.md](../specs/roadmap/roadmap.md)); lo aterriza en **milestones ejecutables y verificables**, en el orden que da valor visible más rápido.
+Este documento es el **plan de ejecución concreto** desde lo ya construido hasta el **MVP completo**, aterrizado en **milestones ejecutables y verificables**. No repite el roadmap estratégico ([roadmap.md](../specs/roadmap/roadmap.md), que define las fases MVP→V1→V2→Enterprise); lo baja a "qué construimos y en qué orden". Para todo lo posterior al MVP (motor de reglas, protocolos industriales, capa de costo, trazabilidad, reportes, marketplace, multi-ERP, IA) manda el roadmap estratégico.
 
-## Estrategia: una tajada vertical primero
+## Estrategia
 
-En vez de completar las 4 capas en ancho, se construye **una tajada vertical del caso estrella** —*un hecho de planta → evento → progreso en vivo*— para tener algo demostrable cuanto antes. Recién después se ensancha (Identity real, gemelo digital, Scrap/Calidad/Paradas, Control Plane).
+Primero se construyó una **tajada vertical** (*un hecho → evento → progreso en vivo*) para tener algo demostrable de punta a punta. **Esa tajada ya está cerrada y verificada con datos reales.** Lo que sigue es **ensanchar**: completar la captura y el modelo físico, la plataforma (identidad, control plane, multi-tenancy real), la Capa 4 rica y la experiencia de usuario, y cerrar los criterios de salida del MVP.
 
 ```mermaid
 flowchart LR
-  M0[M0 · Dev sin auth] --> M1[M1 · Relay outbox→Kafka]
-  M1 --> M2[M2 · Capa 4 mínima\nmotor de eventos]
-  M2 --> M4[M4 · Tablero en vivo]
-  M0 --> M3[M3 · Ingesta/captura manual]
-  M3 --> M2
-  M2 --> M5[M5 · Endurecimiento\nIdentity, Capa 1, dominios]
+  A["✅ Fase A · Tajada vertical\nM0-M4 + M3"] --> B["Fase B · Captura + Capa 1\nM5 M6 M7"]
+  A --> C["Fase C · Plataforma\nM8 M9 M10"]
+  B --> D["Fase D · Capa 4 + UX\nM11 M12 M13 M14"]
+  C --> D
+  D --> E["Fase E · Integración + cierre MVP\nM15 M16"]
 ```
 
-## Estado de partida (verificado)
+---
 
-`Nexo.MasterData` (master data sin costo) · `Nexo.WorkModel` (Capa 2, DAG completo) · `Nexo.Execution` (Capa 3, Lote y Proyecto) compilan, testean y corren local. Infra local: Postgres, Redpanda/Kafka, MinIO, Jaeger. **Gaps que ataca este plan:** nadie publica el outbox, no hay motor de eventos, todos los endpoints dan 401, no hay tablero.
+## ✅ Fase A — Tajada vertical (HECHA)
 
-## Milestones
+La cadena **escritura → outbox → Kafka → motor de eventos → tablero**, navegable y con datos reales.
 
-| # | Milestone | Entrega | Criterio de "hecho" (verificable) | Estado |
-|---|---|---|---|---|
-| **M0** | **Modo dev sin auth** | Bypass de autenticación **solo en Development** en las 4 APIs | Un `GET`/`POST` a un endpoint protegido responde **≠ 401** desde Swagger/cURL, sin token | ✅ Hecho ([005](./completed/005-m0-dev-auth.md)) |
-| **M1** | **Relay outbox → Kafka** | Hosted service que drena `*.outbox_messages` y publica al bus | Un evento persistido en el outbox aparece **publicado en Kafka** (visible en la consola Redpanda) y queda `ProcessedOn` marcado | ✅ Hecho ([006](./completed/006-m1-outbox-relay.md)) |
-| **M2** | **Capa 4 mínima — motor de eventos** | Proyección que consume eventos de Ejecución/Tarea y calcula **progreso por ejecución** | Tras avanzar tareas de una ejecución, una query devuelve su **% de progreso** derivado de los eventos | ✅ Hecho ([007](./completed/007-m2-event-engine.md)) |
-| **M3** | **Ingesta / captura manual** | Flujo mínimo para **reportar un hecho** (avance de tarea / producción) que emite evento | Un registro manual genera su evento canónico y dispara la proyección de M2 | ✅ Hecho ([009](./completed/009-m3-real-flow.md)) · flujo real por API verificado |
-| **M4** | **Tablero en vivo (mínimo)** | Página web mínima que muestra el **progreso de las ejecuciones en tiempo real** | Un avance cargado se ve reflejado en el tablero sin recargar (o con refresh corto) | ✅ Hecho ([008](./completed/008-m4-dashboard.md)) · `http://localhost:5084/` |
-| **M5** | **Endurecimiento** | Identity real (Duende), gemelo digital (Capa 1), Scrap/Calidad/Paradas, Control Plane, gRPC WorkModel→Execution | Cada uno con su propio registro en `design/completed/` | ⬜ |
+| # | Milestone | Entrega | Registro |
+|---|---|---|---|
+| **M0** | Modo dev sin auth | Bypass de auth solo en Development; endpoints ejercitables (401→200) | [005](./completed/005-m0-dev-auth.md) |
+| **M1** | Relay outbox → Kafka | `Nexo.BuildingBlocks.Outbox`: los eventos persistidos se publican al bus | [006](./completed/006-m1-outbox-relay.md) |
+| **M2** | Capa 4 mínima · motor de eventos | `Nexo.EventEngine`: read model de progreso por ejecución | [007](./completed/007-m2-event-engine.md) |
+| **M4** | Tablero en vivo | `http://localhost:5084/` con progreso en tiempo real | [008](./completed/008-m4-dashboard.md) |
+| **M3** | Flujo real end-to-end | Crear ejecución + avanzar tareas **por API** → progreso real en el tablero (+ fix estado monotónico) | [009](./completed/009-m3-real-flow.md) |
 
-## Detalle por milestone
+**Estado del código:** 5 APIs corriendo local (Producción 5080 · MasterData 5081 · WorkModel 5082 · Execution 5083 · EventEngine 5084), infra en docker-compose (Postgres 5433, Redpanda 9092, MinIO, Jaeger). Todo compila y está en `main`.
 
-### M0 · Modo dev sin auth
-- **Qué:** un `DevAuthenticationHandler` (esquema `DevBypass`) en `BuildingBlocks.Web` que, **solo en Development**, autentica cada request como un usuario dev con **todos los scopes `nexo.*`** y el **tenant demo**. En otros entornos no se registra: sigue el JWT/Duende real.
-- **Por qué:** hoy los endpoints validan contra un Duende inexistente (`Authority:Issuer`) → 401. Sin destrabar esto no se puede ejercitar ni demostrar nada.
-- **No hace:** no reemplaza Identity; es andamiaje de desarrollo. La solución real es **M5**.
+---
 
-### M1 · Relay outbox → Kafka
-- **Qué:** los productores de MassTransit + rider de Kafka **ya están cableados** en cada `Program.cs`, pero **nada drena el outbox**. Falta un `BackgroundService` que lea las filas sin procesar de `*.outbox_messages`, las publique al bus y marque `ProcessedOn`.
-- **Ojo (multi-tenant):** el relay debe recorrer los tenants. En local hay uno (demo) vía config; el diseño deja la iteración por tenant lista para el resolver productivo.
+## Fase B — Completar la captura y el modelo físico
 
-### M2 · Capa 4 mínima — motor de eventos
-- **Qué:** un consumidor/proyección que escucha `nexo.execution.*` y `nexo.task.*` y mantiene un **read model de progreso** por ejecución (tareas completadas / totales, ponderado).
-- **Alcance mínimo:** progreso y conteo de tareas; tiempos muertos y cuellos de botella quedan para después.
+### M5 · Gemelo digital mínimo (Capa 1)
+- **Alcance:** jerarquía **Empresa → Planta → Sector → Línea → Centro de trabajo/Máquina** como master data del tenant, y **binding señal↔activo** (cada dato con dueño físico). ABM + navegación básica.
+- **Por qué:** es un `Must` del MVP y hoy no existe; sin él ningún hecho se atribuye a un activo.
+- **Criterio de hecho:** se define una jerarquía de activos y un evento/registro queda **atribuido a un activo**; el tablero puede filtrar por planta/línea.
+- **Depende de:** master data (hecho). Nuevo bounded context de configuración del tenant (**MOD-09**).
 
-### M3 · Ingesta / captura manual
-- **Qué:** el endpoint de avance de tarea de Execution ya existe; M3 lo envuelve en el flujo mínimo de "reportar un hecho" y garantiza que emite su evento canónico (que alimenta M2).
+### M6 · Dominios de captura: Scrap, Calidad, Paradas
+- **Alcance:** los 3 dominios que faltan (hoy solo `Nexo.Production` es scaffold): **Scrap** (motivo + cantidad, sin costo), **Calidad** (inspección con checklist/variables + reason codes), **Paradas** (Downtime con reason code). **Reason Codes** compartidos (**MOD-03**). Fix: registrar validadores en `Nexo.Production`.
+- **Por qué:** los "5 registros" del MVP (producción, scrap, calidad, paradas, eventos) son `Must`.
+- **Criterio de hecho:** cada dominio registra por API, emite su evento canónico (`nexo.scrap.*`, `nexo.quality.*`, `nexo.downtime.*`) y llega al motor/tablero.
+- **Depende de:** relay (hecho), gemelo digital (M5) para atribuir a activo.
 
-### M4 · Tablero en vivo (mínimo)
-- **Qué:** página web mínima (self-contained) que consulta el read model de M2 y muestra el progreso de las ejecuciones activas, con refresh corto o push.
+### M7 · Ingesta datalogger/CSV + evento canónico
+- **Alcance:** ingesta de **archivo/CSV/Excel** + carga manual normalizada al **Evento canónico** con `dedup_key` (idempotencia) y **store-and-forward** (offline-first). Alta y salud básica de dispositivos/señales.
+- **Por qué:** el MVP promete "eliminar la carga manual" desde datalogger/CSV; los protocolos industriales (S7/OPC UA/Modbus/MQTT) quedan en V1 (**DEV-02**).
+- **Criterio de hecho:** un archivo de datalogger cargado se ve en el tablero; tras un corte simulado ningún evento se pierde ni se duplica.
+- **Depende de:** evento canónico (parcial), gemelo digital (M5).
 
-### M5 · Endurecimiento
-- Identity real (Duende) · gemelo digital (Capa 1: jerarquía de activos + binding señal↔activo) · Scrap/Calidad/Paradas · Control Plane (alta de tenant real) · gRPC WorkModel→Execution · registrar validadores en Production · NU1902 OTel.
+---
+
+## Fase C — Plataforma, identidad y multi-tenancy
+
+### M8 · Identity real (Duende) — reemplaza el dev-bypass (M0)
+- **Alcance:** `Nexo.Identity` con Duende IdentityServer; JWT con claim de tenant + **scopes por rol**; los 8 roles canónicos; login de operario por PIN/NFC en kiosco (**SEG-01**). Quitar el dev-bypass de los entornos no-dev (ya está aislado).
+- **Por qué:** hoy todo corre con el bypass de desarrollo; sin Identity no hay seguridad real ni escritura autenticada en la nube.
+- **Criterio de hecho:** un usuario obtiene un token real, y los endpoints validan scope por rol; sin token → 401 fuera de Development.
+- **Depende de:** nada nuevo (los endpoints ya usan políticas de scope).
+
+### M9 · Control Plane mínimo (alta de tenant + licencias)
+- **Alcance:** alta de tenant **end-to-end** (los 7 pasos, provisioning DB-per-tenant, seed idempotente **MOD-16**), planes/licencias básicas, estado de tenants.
+- **Por qué:** hoy el tenant local es una cadena de conexión en config; el alta automatizada es `Must` y prerrequisito de todo a escala.
+- **Criterio de hecho:** el alta ejecuta los 7 pasos y deja la empresa "activa" de forma repetible.
+- **Depende de:** Identity (M8) para el primer usuario del tenant.
+
+### M10 · Multi-tenancy productivo
+- **Alcance:** **Tenant Connection Registry** real (Neon + Secrets Manager) reemplazando el `ConfigurationTenantConnectionResolver`; **relay del outbox multi-tenant** (iterar tenants, no solo el fallback demo); migraciones por cohortes con feature flags (**TEN-01/02**).
+- **Por qué:** el relay y los DbContext hoy usan el fallback del tenant demo; a escala hay que resolver e iterar tenants reales.
+- **Criterio de hecho:** dos tenants con DBs distintas operan aislados; el relay publica los eventos de ambos.
+- **Depende de:** Control Plane (M9).
+
+---
+
+## Fase D — Capa 4 completa y experiencia de usuario
+
+### M11 · Persistir el read model + push en vivo
+- **Alcance:** persistir la proyección de progreso en una **tabla de read model** (offsets committeados, no replay total en memoria); **push** al tablero por WebSocket/SSE (objetivo ≤5 s, **UX-05**) en vez de polling.
+- **Criterio de hecho:** la proyección sobrevive al reinicio sin replay completo; el tablero se actualiza por push.
+- **Depende de:** motor de eventos (hecho).
+
+### M12 · Métricas ricas de Capa 4
+- **Alcance:** **tiempos muertos, cuellos de botella**, progreso **ponderado** (por `progressWeight`), y **KPIs por perfil**: OEE + scrap rate para Lote; **% de avance, desvío de cronograma, hitos** para Proyecto.
+- **Por qué:** el MVP promete estas métricas de la Capa 4; hoy el motor hace solo progreso por conteo.
+- **Criterio de hecho:** el tablero muestra OEE/scrap (lote) y desvío/hitos (proyecto), y señala cuellos de botella.
+- **Depende de:** dominios de captura (M6), read model persistido (M11).
+
+### M13 · gRPC WorkModel → Execution
+- **Alcance:** `ProcessCatalog.GetPublishedVersion` por **gRPC**; Execution obtiene el snapshot de la versión publicada del servicio real en vez de recibirlo como input.
+- **Por qué:** hoy el snapshot se pasa a mano en el `POST /v1/executions`; falta la integración real entre servicios.
+- **Criterio de hecho:** crear una ejecución referenciando una versión publicada de WorkModel, sin enviar el snapshot en el body.
+- **Depende de:** WorkModel + Execution (hechos).
+
+### M14 · Frontend (experiencia de usuario)
+- **Alcance:** UI real más allá del tablero de demo: **ABM de master data**, **definición de procesos** (formulario/lista con DAG), **formularios de captura en tablet** (UX de operario, offline-first) para los 5 registros + avance de tarea, y **tablero enriquecido** con KPIs por perfil.
+- **Por qué:** hoy la captura se hace por API/Swagger; para un operario real hace falta la UX (**UX-01/02**).
+- **Criterio de hecho:** un operario carga producción/avance desde una tablet (formulario) y lo ve en el tablero.
+- **Depende de:** Identity (M8), dominios (M6), métricas (M12).
+
+---
+
+## Fase E — Integración opcional y cierre del MVP
+
+### M15 · Conector Odoo (opcional, modo conectado)
+- **Alcance:** conector con ACL — **pull** de MO/Producto/UoM/Motivos, **push** de producción real y scrap (**INT-01**); activable por tenant; el MVP funciona sin él (modo standalone).
+- **Criterio de hecho:** en un tenant conectado, un registro se sincroniza con Odoo; si no hay ERP, no se pierde ninguna capacidad.
+- **Depende de:** dominios (M6), modo de operación del tenant (**INT-07**).
+
+### M16 · Hardening + criterios de salida del MVP
+- **Alcance:** subir OpenTelemetry (**NU1902**), **tests de integración** end-to-end, **CI/CD** por servicio, **despliegue cloud** (K8s), observabilidad mínima del Control Plane. Cerrar los **[criterios de salida del MVP](../specs/roadmap/roadmap.md#25-criterios-de-salida-exit-criteria)** y un cliente de referencia.
+- **Criterio de hecho:** los criterios de salida de la fase MVP del roadmap estratégico se cumplen y se marcan.
+
+---
+
+## Mapeo a los criterios de salida del MVP
+
+Los [criterios de salida de la fase MVP](../specs/roadmap/roadmap.md) se cubren así:
+
+| Criterio de salida (roadmap estratégico) | Milestone(s) |
+|---|---|
+| Alta de tenant end-to-end (7 pasos) | M9 |
+| Tenant opera standalone (master data → proceso → ejecución → progreso) | ✅ Fase A + M14 (UI) |
+| Producción manual → tablero (caso estrella) | M6 + M7 + M14 |
+| Los dos perfiles (Lote y Proyecto) con KPIs por perfil | ✅ Fase A (modelo) + M12 (KPIs) |
+| DAG completo demostrado | ✅ Fase A (gating real en M3) |
+| Importador CSV acotado | M7 |
+| Cada señal ligada a un activo | M5 |
+| Store-and-forward sin pérdida ni duplicados | M7 |
+| Aislamiento entre tenants verificado | M10 |
+| Sincronización Odoo (no bloqueante) | M15 |
+| Cliente de referencia con reducción de carga manual | M16 |
+
+---
+
+## Más allá del MVP
+
+V1 (MES ligero: reglas, notificaciones, **protocolos industriales**, trazabilidad, reportes, **capa de costo**), V2 (marketplace, multi-ERP, distribución geográfica) y Enterprise (IA/visión, predictivo, simulación) están en el **[roadmap estratégico](../specs/roadmap/roadmap.md)** con su prioridad MoSCoW, dependencias y riesgos. Este documento se detiene en el cierre del MVP.
 
 ## Convención de trabajo
 
-Cada milestone terminado se registra en [`design/completed/`](./completed/README.md) con su evidencia de verificación, y —cuando corresponde— se agrega a [`roadmap/completed/`](../specs/roadmap/completed/README.md). Sin verificación, el milestone no se da por hecho.
+Cada milestone terminado se registra en [`design/completed/`](./completed/README.md) con su evidencia de verificación, y —cuando corresponde— se agrega a [`roadmap/completed/`](../specs/roadmap/completed/README.md). Sin verificación (compila + corre + se comprueba), el milestone no se da por hecho. Los milestones de una fase pueden solaparse; las dependencias marcadas arriba son las que sí obligan a un orden.

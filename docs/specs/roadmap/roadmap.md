@@ -1,10 +1,10 @@
 # Nexo — Roadmap por fases
 
-> **Documento:** `specs/roadmap/roadmap.md` · **Estado:** Borrador v0.2 · **Actualizado:** 2026-07-25
+> **Documento:** `specs/roadmap/roadmap.md` · **Estado:** Borrador v0.3 · **Actualizado:** 2026-07-26
 > **Roles:** Product Manager · Software Architect · UX Designer
 > **Relacionados:** [vision.md](./vision.md) · [milestones.md](./milestones.md) · [backlog.md](./backlog.md) · [idea.md](../idea.md) · [product.md](../specs/product.md) · [layered-architecture.md](../specs/layered-architecture.md) · [master-data.md](../specs/master-data.md) · [architecture.md](../specs/architecture.md) · [modules.md](../specs/modules.md) · [future-features.md](../specs/future-features.md) · [design/completed/](../../design/completed/README.md)
 
-> **🔧 Estado de construcción del MVP (2026-07-25).** La construcción **ya arrancó** —el día cero del Gantt (§1.1) quedó desactualizado respecto de la realidad—. Lo verificado en código hasta hoy (bitácora en [design/completed/](../../design/completed/README.md)):
+> **🔧 Estado de construcción del MVP (2026-07-26).** La construcción **ya arrancó** —el día cero del Gantt (§1.1) quedó desactualizado respecto de la realidad—, y ya hay una **tajada vertical end-to-end funcionando con datos reales** (escritura → outbox → Kafka → motor de eventos → tablero). El plan completo de lo que falta vive en el **[roadmap de ejecución](../../design/mvp-execution-roadmap.md)**. Lo verificado en código hasta hoy (bitácora en [design/completed/](../../design/completed/README.md)):
 >
 > | Bloque del MVP | Estado |
 > |---|---|
@@ -12,10 +12,13 @@
 > | **Master data mínima sin costo** (`Nexo.MasterData`: unidades, ítems, personas, clientes) — **MOD-17** | ✅ Implementado y verificado |
 > | **Capa 2 · Procesos + DAG completo** (`Nexo.WorkModel`: Proceso/Versión inmutable, tareas, precedencias FS/SS/FF+lag, validación de ciclos) — **MOD-18, MOD-20** | ✅ Implementado y verificado |
 > | **Capa 3 · Ejecución en ambos perfiles** (`Nexo.Execution`: sabores Lote y Proyecto, DAG congelado, evidencia obligatoria configurable) — **PRD-16, MOD-19** | ✅ Implementado y verificado |
+> | **Plataforma local** · dev-auth (M0) + **relay outbox→Kafka** (M1) | ✅ Verificado |
+> | **Capa 4 · Motor de eventos mínimo** (`Nexo.EventEngine`: progreso por ejecución) + **Tablero en vivo** (M2/M4) | ✅ Implementado y verificado |
+> | **Flujo real end-to-end** (crear ejecución + avanzar tareas por API → progreso real en el tablero, M3) | ✅ Verificado |
 > | `Nexo.Production` (perfil repetitivo, modelo previo al pivot) | 🟡 Scaffold verificado |
-> | **Capa 4 · Motor de eventos** · relay outbox→Kafka · gRPC WorkModel→Execution · servicio de **Identity** · Ingesta datalogger/CSV · Tablero | ⬜ Pendiente |
+> | Gemelo digital (Capa 1) · dominios Scrap/Calidad/Paradas · ingesta datalogger/CSV · Identity real · Control Plane · gRPC · KPIs ricos · frontend · conector Odoo | ⬜ Pendiente (fases B-E del [roadmap de ejecución](../../design/mvp-execution-roadmap.md)) |
 >
-> **Consecuencia para el roadmap:** el núcleo del modelo de trabajo (Capas 2-3) y la master data ya están, y validaron en código las decisiones **PRD-16 / MOD-17 / MOD-18 / MOD-19 / MOD-20**. Lo que queda del MVP se concentra en la **Capa 4 (motor de eventos + tablero)**, la **ingesta** y el **cableado entre servicios** (relay de eventos, gRPC, Identity). Las fechas del Gantt siguen siendo orientativas; su día cero debe recalibrarse contra este avance real (ver **OPS-06**).
+> **Consecuencia para el roadmap:** el núcleo del modelo de trabajo (Capas 2-3), la master data y **la tajada vertical hasta el tablero** ya están, y validaron en código **PRD-16 / MOD-17 / MOD-18 / MOD-19 / MOD-20** y el flujo event-driven. Lo que queda del MVP es **ensanchar**: completar la **Capa 1 (gemelo digital)**, los **dominios de captura** (scrap/calidad/paradas), la **ingesta**, la **plataforma** (Identity real, Control Plane, multi-tenancy productivo), la **Capa 4 rica** (tiempos muertos, cuellos de botella, KPIs por perfil) y el **frontend** — todo desglosado en el [roadmap de ejecución](../../design/mvp-execution-roadmap.md). Las fechas del Gantt siguen siendo orientativas; su día cero debe recalibrarse contra este avance real (ver **OPS-06**).
 
 ## Resumen ejecutivo
 

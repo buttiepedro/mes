@@ -1,6 +1,6 @@
 # Registro de trabajo completado
 
-> **Documento:** `docs/design/completed/README.md` · **Actualizado:** 2026-07-13
+> **Documento:** `docs/design/completed/README.md` · **Actualizado:** 2026-07-26 · **Plan de lo que falta:** [roadmap de ejecución](../mvp-execution-roadmap.md)
 
 Bitácora de lo que **efectivamente se construyó y se verificó**, en orden cronológico. Complementa a
 [`docs/design/`](../README.md) (que describe *qué se va a construir*) respondiendo *qué se construyó, cómo se

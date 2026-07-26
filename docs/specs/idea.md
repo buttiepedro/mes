@@ -1,10 +1,10 @@
 # Nexo — La idea
 
-> **Documento:** `specs/idea.md` · **Estado:** Borrador v0.2 · **Actualizado:** 2026-07-25
+> **Documento:** `specs/idea.md` · **Estado:** Borrador v0.3 · **Actualizado:** 2026-07-26
 > **Roles:** Product Manager · Software Architect · UX Designer
-> **Relacionados:** [product.md](./specs/product.md) · [layered-architecture.md](./specs/layered-architecture.md) · [architecture.md](./specs/architecture.md) · [modules.md](./specs/modules.md) · [roadmap.md](./roadmap/roadmap.md) · [vision.md](./roadmap/vision.md) · [design/completed/](../design/completed/README.md)
+> **Relacionados:** [product.md](./specs/product.md) · [layered-architecture.md](./specs/layered-architecture.md) · [architecture.md](./specs/architecture.md) · [modules.md](./specs/modules.md) · [roadmap.md](./roadmap/roadmap.md) · [vision.md](./roadmap/vision.md) · [design/completed/](../design/completed/README.md) · [roadmap de ejecución](../design/mvp-execution-roadmap.md)
 
-> **🔧 Estado de implementación (2026-07-25).** El encuadre de este documento —modelo de 4 capas, ERP opcional, ambos perfiles y DAG completo— ya empezó a bajar a código. La cadena **Capa 2 → Capa 3** está implementada y verificada: los servicios `Nexo.MasterData` (master data sin costo), `Nexo.WorkModel` (Procesos + DAG completo con validación de ciclos) y `Nexo.Execution` (Ejecución en sabores **Lote** y **Proyecto**) compilan, testean y corren localmente. Lo que falta para el flujo vivo end-to-end es la **Capa 4 (motor de eventos)**, el **relay del outbox a Kafka**, la integración **gRPC** entre servicios y el servicio de **Identity**. Ver la bitácora en [design/completed/](../design/completed/README.md).
+> **🔧 Estado de implementación (2026-07-26).** El encuadre de este documento —modelo de 4 capas, ERP opcional, ambos perfiles y DAG completo— ya está en código y **funciona de punta a punta**. Las cuatro capas tienen una versión viva: `Nexo.MasterData` (master data sin costo), `Nexo.WorkModel` (Capa 2: Procesos + DAG completo con validación de ciclos), `Nexo.Execution` (Capa 3: Ejecución **Lote** y **Proyecto**) y `Nexo.EventEngine` (Capa 4 mínima: progreso por ejecución), con el **relay outbox→Kafka** conectándolas y un **tablero en vivo**. Verificado con datos reales: crear una ejecución y avanzar sus tareas **por API** proyecta su progreso en el tablero (0%→100%). Lo que falta para el **MVP completo** —gemelo digital (Capa 1), dominios de captura (scrap/calidad/paradas), ingesta datalogger/CSV, Identity real, Control Plane, KPIs ricos y frontend— está desglosado en el **[roadmap de ejecución](../design/mvp-execution-roadmap.md)**. Ver la bitácora en [design/completed/](../design/completed/README.md).
 
 ## Resumen ejecutivo
 

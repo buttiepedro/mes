@@ -57,19 +57,29 @@ builder.Services.AddMassTransit(x =>
 });
 
 // --- AuthN: JWT bearer validated locally via JWKS from Duende (Authority), audience nexo.api ---
-builder.Services
-    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.Authority = builder.Configuration["Authority:Issuer"];
-        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
-        options.TokenValidationParameters = new TokenValidationParameters
+// M0 (MVP execution roadmap): in Development the Duende IdP is not running yet, so we bypass it with
+// a dev-only scheme that authenticates every request as a dev user with all scopes + the demo tenant.
+// The real JWT/Duende flow stands in every other environment.
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddNexoDevAuth();
+}
+else
+{
+    builder.Services
+        .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddJwtBearer(options =>
         {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidAudience = builder.Configuration["Authority:Audience"] ?? "nexo.api"
-        };
-    });
+            options.Authority = builder.Configuration["Authority:Issuer"];
+            options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidAudience = builder.Configuration["Authority:Audience"] ?? "nexo.api"
+            };
+        });
+}
 
 // --- AuthZ: scope policies per endpoint (nexo.workmodel.read / .write / .publish) ---
 builder.Services.AddAuthorization(options =>

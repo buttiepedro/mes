@@ -45,6 +45,16 @@ public sealed class ExecutionProgressProjection
         {
             s.LastEventAt = DateTimeOffset.UtcNow;
 
+            // Status only ever advances: the event log is replayed and topics have no cross-order
+            // guarantee, so a late 'started' must never overwrite a 'closed' already applied.
+            void Advance(string next)
+            {
+                if (StatusRank(next) > StatusRank(s.Status))
+                {
+                    s.Status = next;
+                }
+            }
+
             switch (type)
             {
                 case EventTypes.Execution_Created:
@@ -54,22 +64,19 @@ public sealed class ExecutionProgressProjection
                     {
                         s.TotalTasks = total;
                     }
-                    if (s.Status == "unknown")
-                    {
-                        s.Status = "created";
-                    }
+                    Advance("created");
                     break;
 
                 case EventTypes.Execution_Started:
-                    s.Status = "started";
+                    Advance("started");
                     break;
 
                 case EventTypes.Execution_Closed:
-                    s.Status = "closed";
+                    Advance("closed");
                     break;
 
                 case EventTypes.Execution_Cancelled:
-                    s.Status = "cancelled";
+                    Advance("cancelled");
                     break;
 
                 case EventTypes.Task_Completed:
@@ -96,6 +103,16 @@ public sealed class ExecutionProgressProjection
 
     public ExecutionProgressDto? Get(Guid executionId)
         => _executions.TryGetValue(executionId, out var state) ? state.ToDto() : null;
+
+    // Lifecycle order used to keep status monotonic; 'closed' and 'cancelled' are both terminal.
+    private static int StatusRank(string status) => status switch
+    {
+        "created" => 1,
+        "started" => 2,
+        "closed" => 3,
+        "cancelled" => 3,
+        _ => 0,
+    };
 
     private static bool TryGuid(JsonElement element, string property, out Guid value)
     {

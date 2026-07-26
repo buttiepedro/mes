@@ -35,6 +35,7 @@ verificó y qué decisiones se tomaron al bajar el diseño a código*.
 | [006](./006-m1-outbox-relay.md) | **M1** · Relay outbox → Kafka (`Nexo.BuildingBlocks.Outbox`) | ✅ Completado y verificado | 2026-07-26 | [mvp-execution-roadmap.md](../mvp-execution-roadmap.md) M1 |
 | [007](./007-m2-event-engine.md) | **M2** · Capa 4 mínima: motor de eventos (`Nexo.EventEngine`, progreso por ejecución) | ✅ Completado y verificado | 2026-07-26 | [mvp-execution-roadmap.md](../mvp-execution-roadmap.md) M2 |
 | [008](./008-m4-dashboard.md) | **M4** · Tablero en vivo (progreso de ejecuciones, `http://localhost:5084/`) | ✅ Completado y verificado | 2026-07-26 | [mvp-execution-roadmap.md](../mvp-execution-roadmap.md) M4 |
+| [009](./009-m3-real-flow.md) | **M3** · Flujo real end-to-end (captura por API → tablero) + fix estado monotónico | ✅ Completado y verificado | 2026-07-26 | [mvp-execution-roadmap.md](../mvp-execution-roadmap.md) M3 |
 
 ## Estado general del código
 

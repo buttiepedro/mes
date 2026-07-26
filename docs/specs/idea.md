@@ -1,8 +1,10 @@
 # Nexo — La idea
 
-> **Documento:** `specs/idea.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-13
+> **Documento:** `specs/idea.md` · **Estado:** Borrador v0.2 · **Actualizado:** 2026-07-25
 > **Roles:** Product Manager · Software Architect · UX Designer
-> **Relacionados:** [product.md](./specs/product.md) · [layered-architecture.md](./specs/layered-architecture.md) · [architecture.md](./specs/architecture.md) · [modules.md](./specs/modules.md) · [roadmap.md](./roadmap/roadmap.md) · [vision.md](./roadmap/vision.md)
+> **Relacionados:** [product.md](./specs/product.md) · [layered-architecture.md](./specs/layered-architecture.md) · [architecture.md](./specs/architecture.md) · [modules.md](./specs/modules.md) · [roadmap.md](./roadmap/roadmap.md) · [vision.md](./roadmap/vision.md) · [design/completed/](../design/completed/README.md)
+
+> **🔧 Estado de implementación (2026-07-25).** El encuadre de este documento —modelo de 4 capas, ERP opcional, ambos perfiles y DAG completo— ya empezó a bajar a código. La cadena **Capa 2 → Capa 3** está implementada y verificada: los servicios `Nexo.MasterData` (master data sin costo), `Nexo.WorkModel` (Procesos + DAG completo con validación de ciclos) y `Nexo.Execution` (Ejecución en sabores **Lote** y **Proyecto**) compilan, testean y corren localmente. Lo que falta para el flujo vivo end-to-end es la **Capa 4 (motor de eventos)**, el **relay del outbox a Kafka**, la integración **gRPC** entre servicios y el servicio de **Identity**. Ver la bitácora en [design/completed/](../design/completed/README.md).
 
 ## Resumen ejecutivo
 
@@ -304,12 +306,14 @@ La convergencia de hardware barato, estándares maduros, cloud escalable y ERPs 
 
 ## Preguntas abiertas
 
-1. **Nombre del producto:** "Nexo" es un *working name* provisional; falta validar disponibilidad de marca/dominio y decidir el nombre definitivo.
-2. **Segmento inicial de industrias:** ¿arrancamos foco en 1–2 industrias (p. ej. metalúrgica y alimenticia) para el go-to-market del MVP, o mantenemos amplitud desde el día uno? Ahora se suma la pregunta de si el piloto es de **perfil repetitivo o de proyecto** (afecta PRD-02, el caso estrella).
+> Estas preguntas se gestionan de forma consolidada en el **[tablero maestro de decisiones](./open-questions-board.md)**; abajo queda su estado resumido.
+
+1. ✅ **Resuelto (2026-07-26) — PRD-01:** se mantiene **"Nexo" como working name** hasta el go-to-market; la verificación de marca/dominio/handles queda diferida y **no bloqueante**.
+2. ✅ **Resuelto (2026-07-26) — PRD-04:** dos verticales piloto, **una por perfil** — **Construcción/obra** (perfil proyecto) y **Alimenticia** (perfil repetitivo) — sobre un núcleo genérico configurable. Aprovecha que por **PRD-16** el MVP soporta **ambos perfiles**: el piloto de obra ejercita el DAG (MOD-18) y el sabor Proyecto; el alimenticio, OEE/scrap y trazabilidad de lote (sabor Lote).
 3. ⚠️ **A revisar (2026-07-13) — INT-01:** la integración Odoo del MVP hace *pull* de MO/Producto/UoM/Motivos y *push* de producción real (avance/cierre de MO) y scrap (agregado por cierre de corrida); calidad opcional. **Se reencuadra:** Odoo pasa a ser **opcional** y el MVP debe funcionar sin ERP — ver [tablero de decisiones](./open-questions-board.md).
 4. ✅ **Resuelto (2026-07-11):** el Agente Edge/Gateway se distribuye como **contenedor/software** (con **appliance opcional**), siempre **outbound-only**; en el MVP no captura por protocolos industriales (solo manual + datalogger/CSV), que pasan a V1 — ver [tablero de decisiones](./open-questions-board.md).
-5. ⚠️ **A revisar (2026-07-13) — COM-01:** el pricing es **suscripción base por planta** (captura manual, usuarios, Odoo y dashboard) **+ precio por dispositivo conectado** al entrar la captura automática, con módulos empaquetados por capa vía feature flags. **Queda pendiente definir si cambia cuando el sistema se vende sin ERP** (el conector deja de ser parte del valor base) — ver [tablero de decisiones](./open-questions-board.md).
-6. **Geografía inicial:** ¿el primer mercado es Argentina/LatAm de habla hispana, y qué implica para idioma, soporte y residencia de datos?
-7. **Definición de "eliminar la carga manual" como métrica:** ¿cómo medimos objetivamente la reducción de carga manual para probar la propuesta de valor (ver métricas en [product.md](./specs/product.md))?
-8. **Alcance de perfiles en el MVP:** ¿el MVP soporta ambos perfiles (repetitivo y proyecto) o arranca solo con el repetitivo y el de proyecto entra en V1?
-9. **Mínimo viable de master data propia:** ¿cuántos catálogos entran al MVP y cuáles se difieren, sabiendo que este es el mayor costo oculto del encuadre autónomo?
+5. ⚠️ **A revisar (2026-07-13) — COM-01:** el pricing es **suscripción base por planta** (captura manual, usuarios, Odoo y dashboard) **+ precio por dispositivo conectado** al entrar la captura automática, con módulos empaquetados por capa vía feature flags. La pregunta derivada —si el pricing cambia cuando el sistema se vende sin ERP— quedó registrada como **COM-10** (recomendación: el conector ERP se cobra como add-on; el modo *standalone* es un plan legítimo y completo) — ver [tablero de decisiones](./open-questions-board.md).
+6. ✅ **Resuelto (2026-07-26) — PRD-06:** mercado inicial **LatAm de habla hispana (es-AR base)** con **expansión temprana** a mercados no hispanos; por eso la arquitectura **i18n** y la **residencia de datos por región** se priorizan desde el diseño (no se difieren a Enterprise).
+7. **Definición de "eliminar la carga manual" como métrica:** ¿cómo medimos objetivamente la reducción de carga manual para probar la propuesta de valor (ver métricas en [product.md](./specs/product.md))? (**PRD-07, abierta**).
+8. ✅ **Resuelto (2026-07-13) — PRD-16:** el MVP soporta **ambos perfiles** (repetitivo/**Lote** y proyecto/**Proyecto**), en modelo, UI y KPIs; el perfil proyecto **no** se difiere a V1. Ya implementado en el agregado `Execution` — ver [tablero de decisiones](./open-questions-board.md) y [design/completed/004-execution.md](../design/completed/004-execution.md).
+9. ✅ **Resuelto (2026-07-13) — MOD-17:** la master data del MVP es el **mínimo SIN COSTO** (unidades, productos/ítems, procesos con DAG, personas/roles, insumos sin costo, clientes mínimos); centros de costo, tarifas y costo de insumos —y la métrica de costo real— pasan a V1. Ya implementado en `Nexo.MasterData` — ver [tablero de decisiones](./open-questions-board.md) y [design/completed/002-masterdata.md](../design/completed/002-masterdata.md).

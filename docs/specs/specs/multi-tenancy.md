@@ -322,9 +322,9 @@ flowchart TB
 
 ## Preguntas abiertas
 
-1. **Nombre del producto:** "Nexo" es un working name provisional; falta confirmar naming definitivo y disponibilidad de dominios/subdominios (impacta el esquema de resolución por subdominio).
+1. ✅ **Resuelto (2026-07-26) — PRD-01:** "Nexo" se mantiene como **working name** hasta el go-to-market; la confirmación de dominios/subdominios (que impacta la resolución por subdominio) queda diferida y no bloqueante.
 2. **Estrategia de densidad inicial:** ¿cuántos tenants por instancia en el arranque y cuál es el umbral (por consumo/plan) que promueve a un tenant a instancia dedicada?
-3. **Residencia de datos:** ¿qué regiones se ofrecerán en el MVP/V1 y cómo se comercializa la residencia de datos por región (¿feature enterprise, opción de plan?)?
+3. **Residencia de datos (prioridad elevada por PRD-06):** con la decisión de **expansión temprana** a mercados no hispanos, la residencia por región deja de ser solo un feature Enterprise y se prioriza desde el diseño. **Pendiente cerrar** qué regiones concretas se ofrecen en MVP/V1 y su empaquetado comercial (coordinar con TEN-08).
 4. ✅ **Resuelto (2026-07-11):** migraciones versionadas e idempotentes, aplicadas por cohortes con feature flags y objetivo zero-downtime, con estado de migración observable por tenant desde el Control Plane — ver [tablero de decisiones](../open-questions-board.md).
 5. **Política de backup por plan:** ¿qué frecuencia, retención y RPO/RTO se garantizan por plan/licencia, y cómo se reflejan en Administration & Licensing?
 6. **Reporting cross-tenant del proveedor:** ¿cómo se construyen las métricas agregadas de plataforma sin violar el aislamiento (agregación en Observability vs. pipeline analítico separado)?

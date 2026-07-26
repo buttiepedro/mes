@@ -1,8 +1,21 @@
 # Nexo — Roadmap por fases
 
-> **Documento:** `specs/roadmap/roadmap.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-13
+> **Documento:** `specs/roadmap/roadmap.md` · **Estado:** Borrador v0.2 · **Actualizado:** 2026-07-25
 > **Roles:** Product Manager · Software Architect · UX Designer
-> **Relacionados:** [vision.md](./vision.md) · [milestones.md](./milestones.md) · [backlog.md](./backlog.md) · [idea.md](../idea.md) · [product.md](../specs/product.md) · [layered-architecture.md](../specs/layered-architecture.md) · [master-data.md](../specs/master-data.md) · [architecture.md](../specs/architecture.md) · [modules.md](../specs/modules.md) · [future-features.md](../specs/future-features.md)
+> **Relacionados:** [vision.md](./vision.md) · [milestones.md](./milestones.md) · [backlog.md](./backlog.md) · [idea.md](../idea.md) · [product.md](../specs/product.md) · [layered-architecture.md](../specs/layered-architecture.md) · [master-data.md](../specs/master-data.md) · [architecture.md](../specs/architecture.md) · [modules.md](../specs/modules.md) · [future-features.md](../specs/future-features.md) · [design/completed/](../../design/completed/README.md)
+
+> **🔧 Estado de construcción del MVP (2026-07-25).** La construcción **ya arrancó** —el día cero del Gantt (§1.1) quedó desactualizado respecto de la realidad—. Lo verificado en código hasta hoy (bitácora en [design/completed/](../../design/completed/README.md)):
+>
+> | Bloque del MVP | Estado |
+> |---|---|
+> | Scaffold del monorepo (.NET 8, Clean Arch + CQRS, multi-tenant DB-per-tenant, outbox por servicio) + infra local (Postgres, Redpanda/Kafka, MinIO, Jaeger) | ✅ Verificado |
+> | **Master data mínima sin costo** (`Nexo.MasterData`: unidades, ítems, personas, clientes) — **MOD-17** | ✅ Implementado y verificado |
+> | **Capa 2 · Procesos + DAG completo** (`Nexo.WorkModel`: Proceso/Versión inmutable, tareas, precedencias FS/SS/FF+lag, validación de ciclos) — **MOD-18, MOD-20** | ✅ Implementado y verificado |
+> | **Capa 3 · Ejecución en ambos perfiles** (`Nexo.Execution`: sabores Lote y Proyecto, DAG congelado, evidencia obligatoria configurable) — **PRD-16, MOD-19** | ✅ Implementado y verificado |
+> | `Nexo.Production` (perfil repetitivo, modelo previo al pivot) | 🟡 Scaffold verificado |
+> | **Capa 4 · Motor de eventos** · relay outbox→Kafka · gRPC WorkModel→Execution · servicio de **Identity** · Ingesta datalogger/CSV · Tablero | ⬜ Pendiente |
+>
+> **Consecuencia para el roadmap:** el núcleo del modelo de trabajo (Capas 2-3) y la master data ya están, y validaron en código las decisiones **PRD-16 / MOD-17 / MOD-18 / MOD-19 / MOD-20**. Lo que queda del MVP se concentra en la **Capa 4 (motor de eventos + tablero)**, la **ingesta** y el **cableado entre servicios** (relay de eventos, gRPC, Identity). Las fechas del Gantt siguen siendo orientativas; su día cero debe recalibrarse contra este avance real (ver **OPS-06**).
 
 ## Resumen ejecutivo
 
@@ -415,6 +428,7 @@ Estas capacidades no pertenecen a una sola fase; se refuerzan en cada una:
 
 - Cada fase se descompone en **hitos con criterios de aceptación medibles** en [milestones.md](./milestones.md).
 - El trabajo concreto (épicas y user stories con tag de fase) vive en [backlog.md](./backlog.md).
+- Los **ítems del roadmap ya completamente implementados y verificados** se registran en [completed/](./completed/README.md) (vista "roadmap" de la bitácora técnica de [design/completed/](../../design/completed/README.md)).
 - El **modelo de 4 capas** que estructura todas las fases está en [layered-architecture.md](../specs/layered-architecture.md) y se desarrolla en [digital-twin.md](../specs/digital-twin.md), [work-model.md](../specs/work-model.md), [execution.md](../specs/execution.md), [event-engine.md](../specs/event-engine.md) y [master-data.md](../specs/master-data.md).
 - El detalle por módulo y su mapeo a fases está en [modules.md](../specs/modules.md) y los documentos de dominio ([production.md](../specs/production.md), [quality.md](../specs/quality.md), [scrap.md](../specs/scrap.md), [downtime.md](../specs/downtime.md), [traceability.md](../specs/traceability.md), [integrations.md](../specs/integrations.md), [rules-engine.md](../specs/rules-engine.md), [dashboards.md](../specs/dashboards.md), [notifications.md](../specs/notifications.md), [devices.md](../specs/devices.md)).
 - Las capacidades marcadas **Won't** en cada fase se documentan como visión futura en [future-features.md](../specs/future-features.md).

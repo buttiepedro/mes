@@ -257,9 +257,9 @@ Los principios traducen la estrategia en criterios de decisión cotidianos. Cuan
 
 ## Preguntas abiertas
 
-1. **Nombre definitivo del producto.** "Nexo" es un *working name* provisional; falta validar disponibilidad de marca/dominio antes de invertir en posicionamiento de la visión.
+1. ✅ **Resuelto (2026-07-26) — PRD-01:** se mantiene **"Nexo" como working name** hasta el go-to-market; la validación de marca/dominio queda diferida y no bloqueante.
 2. **Definición operativa de la NSM.** ¿Cómo medimos con precisión "eventos que sustituyen carga manual"? ¿Contamos por evento, por registro sustituido o por hora-persona ahorrada? Debe cerrarse junto con las métricas de [product.md](../specs/product.md).
-3. **Alcance geográfico del horizonte a 3 años.** ¿La visión de "multi-región" del Año 3 apunta a LatAm, o incluye expansión a mercados de habla no hispana antes de lo previsto? Impacta residencia de datos y localización.
+3. ✅ **Resuelto (2026-07-26) — PRD-06:** mercado inicial **LatAm hispano (es-AR)** con **expansión temprana** a mercados de habla no hispana; en consecuencia, **i18n y residencia de datos por región se priorizan desde el diseño** (no se difieren al final del horizonte), aunque la multi-región de alta disponibilidad siga siendo capacidad Enterprise.
 4. **Ritmo de la escalera de capas.** ¿La transición captura → MES → IA es estrictamente secuencial, o se anticipan capacidades de analítica/IA "faro" en V2 para diferenciación comercial temprana?
 5. **Modelo de ecosistema/partners.** ¿El Marketplace será de conectores oficiales y de terceros desde V2, y qué gobernanza (certificación, revenue share) sostiene el pilar de extensibilidad?
 6. **Umbral de "estándar de facto".** ¿Con qué señales medibles (cuota de mercado, número de plantas, presencia de partners) declaramos cumplida la visión de ser la capa estándar de captura?

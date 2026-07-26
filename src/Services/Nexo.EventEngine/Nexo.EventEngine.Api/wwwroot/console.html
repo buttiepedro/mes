@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nexo · Consola</title>
+  <style>
+    :root {
+      --bg:#0e1117; --panel:#161b22; --panel-2:#1c2430; --border:#2a3441; --text:#e6edf3;
+      --muted:#8b98a5; --accent:#3fb950; --accent-2:#58a6ff; --warn:#d29922; --danger:#f85149; --track:#21262d;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+    header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:16px 24px;border-bottom:1px solid var(--border);background:var(--panel);position:sticky;top:0;z-index:5}
+    header h1{font-size:18px;margin:0;font-weight:650}
+    header h1 .sub{color:var(--muted);font-weight:400}
+    header a{margin-left:auto;color:var(--accent-2);text-decoration:none;font-size:14px}
+    main{padding:24px;max-width:1100px;margin:0 auto;display:grid;gap:20px}
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px}
+    .card h2{margin:0 0 4px;font-size:15px;font-weight:650}
+    .card .hint{color:var(--muted);font-size:13px;margin:0 0 14px}
+    label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px}
+    input,select{width:100%;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:9px 10px;font-size:14px}
+    .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;align-items:end}
+    button{background:var(--accent-2);color:#03121f;border:0;border-radius:8px;padding:9px 16px;font-size:14px;font-weight:600;cursor:pointer}
+    button.ghost{background:transparent;color:var(--text);border:1px solid var(--border);font-weight:500}
+    button.go{background:var(--accent);color:#04140a}
+    button:disabled{opacity:.45;cursor:not-allowed}
+    table{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px}
+    th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--border)}
+    th{color:var(--muted);font-weight:500}
+    .tag{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--border);color:var(--muted)}
+    .s-ready{color:var(--accent-2);border-color:rgba(88,166,255,.4)}
+    .s-in_progress{color:var(--warn);border-color:rgba(210,153,34,.4)}
+    .s-completed,.s-closed{color:var(--accent);border-color:rgba(63,185,80,.4)}
+    .s-pending{color:var(--muted)}
+    .actions{display:flex;gap:14px;flex-wrap:wrap;margin-top:14px;align-items:center}
+    .bar{height:12px;background:var(--track);border-radius:999px;overflow:hidden;flex:1;min-width:160px}
+    .bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent-2),var(--accent));transition:width .5s}
+    .pct{font-weight:650;font-variant-numeric:tabular-nums}
+    .tasklist{margin:10px 0 0;padding:0;list-style:none;display:grid;gap:8px}
+    .tasklist li{display:flex;align-items:center;gap:10px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:8px 12px}
+    .tasklist .code{font-weight:600;min-width:44px}
+    .tasklist .name{color:var(--muted);flex:1}
+    .tasklist button{padding:5px 12px;font-size:12px}
+    #log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--muted);white-space:pre-wrap;margin-top:8px;max-height:120px;overflow:auto}
+    .err{color:var(--danger)} .ok{color:var(--accent)}
+    .muted{color:var(--muted)}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Nexo <span class="sub">· Consola del operador/planificador</span></h1>
+    <a href="/">Ver tablero en vivo →</a>
+  </header>
+  <main>
+
+    <!-- 1 · MASTER DATA -->
+    <section class="card">
+      <h2>1 · Master data</h2>
+      <p class="hint">Creá una unidad y un ítem (el objetivo del lote los usa). Sin costo (MOD-17).</p>
+      <div class="row">
+        <div><label>Código unidad</label><input id="uCode" placeholder="UN"></div>
+        <div><label>Nombre</label><input id="uName" placeholder="Unidad"></div>
+        <div><label>Símbolo</label><input id="uSym" placeholder="un"></div>
+        <div><label>Magnitud</label>
+          <select id="uMag"><option>count</option><option>mass</option><option>length</option><option>area</option><option>volume</option><option>time</option><option>energy</option></select>
+        </div>
+        <div><label>Base</label><select id="uBase"><option value="true">sí</option><option value="false">no</option></select></div>
+        <div><label>Factor→base</label><input id="uFactor" type="number" value="1"></div>
+        <div><button class="go" onclick="createUom()">+ Unidad</button></div>
+      </div>
+      <p class="hint" style="margin:10px 0 0">Solo puede haber <b>una unidad base por magnitud</b>. Si ya existe una, creá la nueva como "base: no" con su factor.</p>
+      <div class="row" style="margin-top:12px">
+        <div><label>Código ítem</label><input id="iCode" placeholder="PROD-A"></div>
+        <div><label>Nombre</label><input id="iName" placeholder="Producto A"></div>
+        <div><label>Unidad base</label><select id="iUom"></select></div>
+        <div><label>Trazabilidad</label><select id="iTrack"><option>none</option><option>lot</option><option>serial</option></select></div>
+        <div><button class="go" onclick="createItem()">+ Ítem</button></div>
+      </div>
+      <div class="row" style="margin-top:8px"><div><button class="ghost" onclick="loadMasterData()">↻ Refrescar</button></div></div>
+      <table><thead><tr><th>Unidades</th><th>Ítems</th></tr></thead>
+        <tbody><tr>
+          <td id="uomList" class="muted">—</td>
+          <td id="itemList" class="muted">—</td>
+        </tr></tbody>
+      </table>
+    </section>
+
+    <!-- 2 · LANZAR CORRIDA -->
+    <section class="card">
+      <h2>2 · Definir y lanzar una corrida (lote)</h2>
+      <p class="hint">Definí un proceso con tareas en secuencia (DAG lineal FS) y lanzá la ejecución. El snapshot se congela en la corrida.</p>
+      <div class="row">
+        <div><label>Código de la corrida</label><input id="exCode" placeholder="LOTE-001"></div>
+        <div><label>Ítem objetivo</label><select id="tItem"></select></div>
+        <div><label>Unidad</label><select id="tUom"></select></div>
+        <div><label>Cantidad</label><input id="tQty" type="number" value="100"></div>
+      </div>
+      <div style="margin-top:14px">
+        <label>Tareas (en orden; cada una depende de la anterior)</label>
+        <ul id="taskDraft" class="tasklist"></ul>
+        <div class="row" style="margin-top:8px">
+          <div><input id="tkCode" placeholder="Código tarea (T1)"></div>
+          <div><input id="tkName" placeholder="Nombre (Corte)"></div>
+          <div><button class="ghost" onclick="addTask()">+ Tarea</button></div>
+        </div>
+      </div>
+      <div class="actions"><button class="go" onclick="launch()">🚀 Lanzar corrida</button></div>
+    </section>
+
+    <!-- 3 · CORRIDA ACTIVA -->
+    <section class="card" id="runCard" hidden>
+      <h2>3 · Corrida activa — <span id="runCode"></span></h2>
+      <p class="hint">Iniciá y completá cada tarea. Solo se habilita la siguiente cuando cerrás la anterior (gating DAG).</p>
+      <div class="actions">
+        <div class="bar"><i id="runBar"></i></div>
+        <span class="pct" id="runPct">0%</span>
+        <span class="tag" id="runStatus">—</span>
+        <button class="ghost" onclick="closeRun()">Cerrar corrida</button>
+      </div>
+      <ul id="taskBoard" class="tasklist"></ul>
+    </section>
+
+    <section class="card">
+      <h2>Actividad</h2>
+      <div id="log">listo.</div>
+    </section>
+  </main>
+
+  <script>
+    const MD = 'http://localhost:5081';   // MasterData
+    const EX = 'http://localhost:5083';   // Execution
+    const EE = '';                        // EventEngine (mismo origen)
+    const uuid = () => crypto.randomUUID();
+    const ROLE_ID = uuid();               // un rol responsable fijo para la demo
+
+    let draftTasks = [];   // {id, code, name}
+    let uoms = [], items = [];
+    let run = null;        // {id, code}
+    let pollTimer = null;
+
+    const logEl = document.getElementById('log');
+    function log(msg, cls) { logEl.innerHTML = `<span class="${cls||''}">${new Date().toLocaleTimeString()} · ${msg}</span>\n` + logEl.innerHTML; }
+
+    async function api(method, url, body) {
+      const res = await fetch(url, {
+        method,
+        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : null;
+      if (!res.ok) throw new Error((data && (data.detail || data.title)) || ('HTTP ' + res.status));
+      return data;
+    }
+
+    // ---- Master data ----
+    async function createUom() {
+      try {
+        const b = { code: v('uCode'), name: v('uName'), symbol: v('uSym'), magnitude: v('uMag'), factorToBase: Number(v('uFactor'))||1, isBase: v('uBase')==='true', decimals: 0 };
+        await api('POST', `${MD}/v1/uoms`, b);
+        log(`unidad ${b.code} creada`, 'ok'); await loadMasterData();
+      } catch (e) { log('unidad: ' + e.message, 'err'); }
+    }
+    async function createItem() {
+      try {
+        const b = { code: v('iCode'), name: v('iName'), baseUom: v('iUom'), tracking: v('iTrack') };
+        await api('POST', `${MD}/v1/items`, b);
+        log(`ítem ${b.code} creado`, 'ok'); await loadMasterData();
+      } catch (e) { log('ítem: ' + e.message, 'err'); }
+    }
+    async function loadMasterData() {
+      try {
+        uoms = await api('GET', `${MD}/v1/uoms`) || [];
+        items = await api('GET', `${MD}/v1/items`) || [];
+        document.getElementById('uomList').innerHTML = uoms.length ? uoms.map(u => `${u.code} <span class="muted">(${u.name})</span>`).join('<br>') : '—';
+        document.getElementById('itemList').innerHTML = items.length ? items.map(i => `${i.code} <span class="muted">(${i.name})</span>`).join('<br>') : '—';
+        fillSelect('tItem', items.map(i => [i.id, `${i.code} — ${i.name}`]));
+        fillSelect('tUom', uoms.map(u => [u.id, `${u.code} — ${u.name}`]));
+        fillSelect('iUom', uoms.map(u => [u.code, `${u.code} — ${u.name}`]));   // unidad base del ítem (por código)
+      } catch (e) { log('cargar master data: ' + e.message + ' (¿APIs arriba?)', 'err'); }
+    }
+
+    // ---- Definir tareas ----
+    function addTask() {
+      const code = v('tkCode'), name = v('tkName');
+      if (!code) return;
+      draftTasks.push({ id: uuid(), code, name: name || code });
+      document.getElementById('tkCode').value = ''; document.getElementById('tkName').value = '';
+      renderDraft();
+    }
+    function renderDraft() {
+      document.getElementById('taskDraft').innerHTML = draftTasks.map((t, i) =>
+        `<li><span class="code">${t.code}</span><span class="name">${t.name}</span>` +
+        (i > 0 ? '<span class="tag">FS ← ' + draftTasks[i-1].code + '</span>' : '<span class="tag">inicio</span>') +
+        `<button class="ghost" onclick="delTask('${t.id}')">✕</button></li>`).join('');
+    }
+    function delTask(id) { draftTasks = draftTasks.filter(t => t.id !== id); renderDraft(); }
+
+    // ---- Lanzar ----
+    async function launch() {
+      try {
+        if (!draftTasks.length) return log('agregá al menos una tarea', 'err');
+        const itemId = v('tItem'), uomId = v('tUom');
+        if (!itemId || !uomId) return log('creá y elegí un ítem y una unidad primero', 'err');
+        const body = {
+          code: v('exCode') || ('LOTE-' + Date.now()),
+          snapshot: {
+            processId: uuid(), processVersionId: uuid(), versionNo: '1', profile: 'repetitive',
+            tasks: draftTasks.map(t => ({ taskId: t.id, code: t.code, name: t.name, responsibleRoleId: ROLE_ID, obligation: 'mandatory' })),
+            precedences: draftTasks.slice(1).map((t, i) => ({ predecessorTaskId: draftTasks[i].id, successorTaskId: t.id, type: 'FS', lagSeconds: 0 })),
+          },
+          trigger: { type: 'plan' },
+          target: { itemId, quantity: Number(v('tQty')) || 1, uomId },
+          priority: 1,
+        };
+        const res = await api('POST', `${EX}/v1/executions`, body);
+        run = { id: res.executionId, code: res.code };
+        log(`corrida ${res.code} lanzada (${res.taskRunCount} tareas)`, 'ok');
+        draftTasks = []; renderDraft();
+        document.getElementById('runCard').hidden = false;
+        document.getElementById('runCode').textContent = res.code;
+        await refreshBoard();
+        startPolling();
+      } catch (e) { log('lanzar: ' + e.message, 'err'); }
+    }
+
+    // ---- Task board ----
+    async function refreshBoard() {
+      if (!run) return;
+      const snap = await api('GET', `${EX}/v1/executions/${run.id}`);
+      const tasks = snap.taskRuns || snap.tasks || [];
+      document.getElementById('taskBoard').innerHTML = tasks.map(t => {
+        const st = (t.status || '').toLowerCase();
+        const canStart = st === 'ready';
+        const canComplete = st === 'in_progress';
+        return `<li><span class="code">${t.code}</span><span class="name">${t.name || ''}</span>` +
+          `<span class="tag s-${st}">${st}</span>` +
+          `<button onclick="taskAction('${t.id}','start')" ${canStart?'':'disabled'}>Iniciar</button>` +
+          `<button class="go" onclick="taskAction('${t.id}','complete')" ${canComplete?'':'disabled'}>Completar</button></li>`;
+      }).join('');
+    }
+    async function taskAction(taskRunId, action) {
+      try {
+        await api('POST', `${EX}/v1/tasks/${taskRunId}:${action}`, {});
+        log(`tarea ${action==='start'?'iniciada':'completada'}`, 'ok');
+        await refreshBoard();
+      } catch (e) { log(`${action}: ` + e.message, 'err'); }
+    }
+    async function closeRun() {
+      if (!run) return;
+      try { await api('POST', `${EX}/v1/executions/${run.id}:close`, { mode: 'normal' }); log('corrida cerrada', 'ok'); await refreshBoard(); }
+      catch (e) { log('cerrar: ' + e.message, 'err'); }
+    }
+
+    // ---- Progreso en vivo (EventEngine) ----
+    function startPolling() { if (pollTimer) clearInterval(pollTimer); pollTimer = setInterval(pollProgress, 2000); pollProgress(); }
+    async function pollProgress() {
+      if (!run) return;
+      try {
+        const p = await api('GET', `${EE}/v1/executions/${run.id}/progress`);
+        const pct = Number(p.progressPct) || 0;
+        document.getElementById('runBar').style.width = pct + '%';
+        document.getElementById('runPct').textContent = pct.toFixed(1) + '%';
+        document.getElementById('runStatus').textContent = p.status + ` · ${p.completedTasks}/${p.totalTasks}`;
+      } catch (e) { /* el motor puede tardar un tick */ }
+    }
+
+    // ---- utils ----
+    function v(id){ return document.getElementById(id).value.trim(); }
+    function fillSelect(id, pairs){ const s=document.getElementById(id); s.innerHTML = pairs.length ? pairs.map(([val,txt])=>`<option value="${val}">${txt}</option>`).join('') : '<option value="">(crear primero)</option>'; }
+
+    loadMasterData();
+  </script>
+</body>
+</html>

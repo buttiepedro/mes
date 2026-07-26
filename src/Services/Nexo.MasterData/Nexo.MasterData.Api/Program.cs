@@ -67,6 +67,7 @@ builder.Services.AddMassTransit(x =>
 if (builder.Environment.IsDevelopment())
 {
     builder.Services.AddNexoDevAuth();
+    builder.Services.AddNexoDevCors();
 }
 else
 {
@@ -130,6 +131,11 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+}
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseCors(DevCors.PolicyName);   // permite que la consola local (otro puerto) llame a esta API
 }
 
 app.UseAuthentication();

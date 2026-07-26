@@ -100,6 +100,7 @@ La cadena **escritura → outbox → Kafka → motor de eventos → tablero**, n
 - **Depende de:** WorkModel + Execution (hechos).
 
 ### M14 · Frontend (experiencia de usuario)
+> 🟡 **Slice hecho ([010](./completed/010-m14-console.md)):** una **consola web** (`http://localhost:5084/console.html`) ya cierra el lazo humano —alta de master data, definir/lanzar una corrida y avanzar tareas, sin curl—. Falta la UX de operario final (abajo).
 - **Alcance:** UI real más allá del tablero de demo: **ABM de master data**, **definición de procesos** (formulario/lista con DAG), **formularios de captura en tablet** (UX de operario, offline-first) para los 5 registros + avance de tarea, y **tablero enriquecido** con KPIs por perfil.
 - **Por qué:** hoy la captura se hace por API/Swagger; para un operario real hace falta la UX (**UX-01/02**).
 - **Criterio de hecho:** un operario carga producción/avance desde una tablet (formulario) y lo ve en el tablero.

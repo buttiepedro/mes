@@ -34,6 +34,7 @@ verificó y qué decisiones se tomaron al bajar el diseño a código*.
 | [005](./005-m0-dev-auth.md) | **M0** · Modo dev sin auth (bypass en Development) | ✅ Completado y verificado | 2026-07-26 | [mvp-execution-roadmap.md](../mvp-execution-roadmap.md) M0 |
 | [006](./006-m1-outbox-relay.md) | **M1** · Relay outbox → Kafka (`Nexo.BuildingBlocks.Outbox`) | ✅ Completado y verificado | 2026-07-26 | [mvp-execution-roadmap.md](../mvp-execution-roadmap.md) M1 |
 | [007](./007-m2-event-engine.md) | **M2** · Capa 4 mínima: motor de eventos (`Nexo.EventEngine`, progreso por ejecución) | ✅ Completado y verificado | 2026-07-26 | [mvp-execution-roadmap.md](../mvp-execution-roadmap.md) M2 |
+| [008](./008-m4-dashboard.md) | **M4** · Tablero en vivo (progreso de ejecuciones, `http://localhost:5084/`) | ✅ Completado y verificado | 2026-07-26 | [mvp-execution-roadmap.md](../mvp-execution-roadmap.md) M4 |
 
 ## Estado general del código
 

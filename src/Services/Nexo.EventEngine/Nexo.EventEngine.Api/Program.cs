@@ -73,6 +73,11 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+// Static live dashboard (wwwroot/index.html) served before auth so the page itself is public; its
+// fetch to /v1/executions/progress is authenticated (dev bypass in Development).
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.UseAuthentication();
 app.UseNexoWeb();          // exception handling + tenant resolution
 app.UseAuthorization();

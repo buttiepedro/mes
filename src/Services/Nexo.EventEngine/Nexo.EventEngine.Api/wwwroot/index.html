@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nexo · Tablero en vivo</title>
+  <style>
+    :root {
+      --bg: #0e1117; --panel: #161b22; --panel-2: #1c2430; --border: #2a3441;
+      --text: #e6edf3; --muted: #8b98a5; --accent: #3fb950; --accent-2: #58a6ff;
+      --warn: #d29922; --danger: #f85149; --track: #21262d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    header {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      padding: 18px 24px; border-bottom: 1px solid var(--border);
+      background: var(--panel); position: sticky; top: 0; z-index: 5;
+    }
+    header h1 { font-size: 18px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+    header h1 .sub { color: var(--muted); font-weight: 400; }
+    .live { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; color: var(--muted); font-size: 13px; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 0 rgba(63,185,80,.6); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(63,185,80,.5)} 70%{box-shadow:0 0 0 8px rgba(63,185,80,0)} 100%{box-shadow:0 0 0 0 rgba(63,185,80,0)} }
+    main { padding: 24px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+    .card .top { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+    .code { font-size: 17px; font-weight: 650; }
+    .badges { margin-left: auto; display: flex; gap: 6px; }
+    .badge { font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+    .badge.project { color: var(--accent-2); border-color: rgba(88,166,255,.35); }
+    .badge.batch { color: #d2a8ff; border-color: rgba(210,168,255,.35); }
+    .status { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+    .status b { color: var(--text); font-weight: 600; }
+    .status.created b { color: var(--muted); }
+    .status.started b { color: var(--accent-2); }
+    .status.closed b { color: var(--accent); }
+    .status.cancelled b { color: var(--danger); }
+    .bar { height: 12px; background: var(--track); border-radius: 999px; overflow: hidden; }
+    .bar > i { display: block; height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, var(--accent-2), var(--accent)); transition: width .6s ease; }
+    .meta { display: flex; justify-content: space-between; margin-top: 10px; font-size: 13px; color: var(--muted); }
+    .pct { font-variant-numeric: tabular-nums; font-weight: 650; color: var(--text); }
+    .empty { color: var(--muted); text-align: center; padding: 80px 20px; font-size: 15px; }
+    .error { color: var(--danger); }
+    footer { color: var(--muted); font-size: 12px; padding: 8px 24px 24px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Nexo <span class="sub">· Tablero en vivo</span></h1>
+    <span class="live"><span class="dot"></span><span id="status">conectando…</span></span>
+  </header>
+  <main>
+    <div id="grid" class="grid"></div>
+    <div id="empty" class="empty" hidden>Sin ejecuciones todavía. En cuanto una corrida emita eventos, aparece acá.</div>
+  </main>
+  <footer>Capa 4 · motor de eventos — progreso derivado de hechos. Actualiza cada 2 s desde <code>/v1/executions/progress</code>.</footer>
+
+  <script>
+    const grid = document.getElementById('grid');
+    const empty = document.getElementById('empty');
+    const statusEl = document.getElementById('status');
+    let lastOk = null;
+
+    const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    const statusLabel = s => ({created:'creada', started:'en curso', closed:'cerrada', cancelled:'cancelada'}[s] || s || '—');
+
+    function render(items) {
+      empty.hidden = items.length > 0;
+      grid.innerHTML = items.map(x => {
+        const pct = Math.max(0, Math.min(100, Number(x.progressPct) || 0));
+        const flavor = (x.flavor || '').toLowerCase();
+        const status = (x.status || '').toLowerCase();
+        return `
+          <div class="card">
+            <div class="top">
+              <span class="code">${esc(x.code || '(sin código)')}</span>
+              <span class="badges">
+                ${flavor ? `<span class="badge ${flavor}">${esc(flavor)}</span>` : ''}
+              </span>
+            </div>
+            <div class="status ${status}">Estado: <b>${esc(statusLabel(status))}</b></div>
+            <div class="bar"><i style="width:${pct}%"></i></div>
+            <div class="meta">
+              <span>${x.completedTasks} / ${x.totalTasks} tareas</span>
+              <span class="pct">${pct.toFixed(1)}%</span>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    async function poll() {
+      try {
+        const res = await fetch('/v1/executions/progress', { headers: { 'Accept': 'application/json' } });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        render(data);
+        lastOk = new Date();
+        statusEl.textContent = `${data.length} ejecución(es) · actualizado recién`;
+        statusEl.classList.remove('error');
+      } catch (e) {
+        statusEl.textContent = 'sin conexión (' + e.message + ')';
+        statusEl.classList.add('error');
+      }
+    }
+
+    setInterval(() => {
+      if (lastOk) {
+        const secs = Math.round((Date.now() - lastOk) / 1000);
+        if (secs > 3) statusEl.textContent = `actualizado hace ${secs}s`;
+      }
+    }, 1000);
+
+    poll();
+    setInterval(poll, 2000);
+  </script>
+</body>
+</html>

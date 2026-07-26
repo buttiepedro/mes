@@ -30,8 +30,8 @@ flowchart LR
 | **M0** | **Modo dev sin auth** | Bypass de autenticación **solo en Development** en las 4 APIs | Un `GET`/`POST` a un endpoint protegido responde **≠ 401** desde Swagger/cURL, sin token | ✅ Hecho ([005](./completed/005-m0-dev-auth.md)) |
 | **M1** | **Relay outbox → Kafka** | Hosted service que drena `*.outbox_messages` y publica al bus | Un evento persistido en el outbox aparece **publicado en Kafka** (visible en la consola Redpanda) y queda `ProcessedOn` marcado | ✅ Hecho ([006](./completed/006-m1-outbox-relay.md)) |
 | **M2** | **Capa 4 mínima — motor de eventos** | Proyección que consume eventos de Ejecución/Tarea y calcula **progreso por ejecución** | Tras avanzar tareas de una ejecución, una query devuelve su **% de progreso** derivado de los eventos | ✅ Hecho ([007](./completed/007-m2-event-engine.md)) |
-| **M3** | **Ingesta / captura manual** | Flujo mínimo para **reportar un hecho** (avance de tarea / producción) que emite evento | Un registro manual genera su evento canónico y dispara la proyección de M2 | ⬜ **← siguiente** |
-| **M4** | **Tablero en vivo (mínimo)** | Página web mínima que muestra el **progreso de las ejecuciones en tiempo real** | Un avance cargado se ve reflejado en el tablero sin recargar (o con refresh corto) | ⬜ |
+| **M3** | **Ingesta / captura manual** | Flujo mínimo para **reportar un hecho** (avance de tarea / producción) que emite evento | Un registro manual genera su evento canónico y dispara la proyección de M2 | ⬜ **← siguiente** (flujo real por API) |
+| **M4** | **Tablero en vivo (mínimo)** | Página web mínima que muestra el **progreso de las ejecuciones en tiempo real** | Un avance cargado se ve reflejado en el tablero sin recargar (o con refresh corto) | ✅ Hecho ([008](./completed/008-m4-dashboard.md)) · `http://localhost:5084/` |
 | **M5** | **Endurecimiento** | Identity real (Duende), gemelo digital (Capa 1), Scrap/Calidad/Paradas, Control Plane, gRPC WorkModel→Execution | Cada uno con su propio registro en `design/completed/` | ⬜ |
 
 ## Detalle por milestone

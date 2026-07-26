@@ -37,13 +37,15 @@ $services = @(
   @{ Name = 'Production'; Port = 5080; Proj = 'src\Services\Nexo.Production\Nexo.Production.Api' },
   @{ Name = 'MasterData'; Port = 5081; Proj = 'src\Services\Nexo.MasterData\Nexo.MasterData.Api' },
   @{ Name = 'WorkModel';  Port = 5082; Proj = 'src\Services\Nexo.WorkModel\Nexo.WorkModel.Api'  },
-  @{ Name = 'Execution';  Port = 5083; Proj = 'src\Services\Nexo.Execution\Nexo.Execution.Api'  }
+  @{ Name = 'Execution';  Port = 5083; Proj = 'src\Services\Nexo.Execution\Nexo.Execution.Api'  },
+  @{ Name = 'EventEngine'; Port = 5084; Proj = 'src\Services\Nexo.EventEngine\Nexo.EventEngine.Api' }
 )
 
 if ($Migrate) {
   Write-Host '== Migraciones EF (idempotente) ==' -ForegroundColor Cyan
   foreach ($s in $services) {
     $infra = $s.Proj -replace '\.Api$', '.Infrastructure'
+    if (-not (Test-Path (Join-Path $root $infra))) { continue }  # servicios sin EF (p. ej. EventEngine)
     dotnet ef database update -p $infra -s $s.Proj
   }
 }

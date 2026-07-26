@@ -33,6 +33,7 @@ verificó y qué decisiones se tomaron al bajar el diseño a código*.
 | [004](./004-execution.md) | Servicio `Nexo.Execution` (Capa 3 · Lote y Proyecto, PRD-16) | ✅ Completado y verificado | 2026-07-25 | [03](../03-data-schema.md) §2.7-2.8 · [04](../04-service-contracts.md) §2.7 |
 | [005](./005-m0-dev-auth.md) | **M0** · Modo dev sin auth (bypass en Development) | ✅ Completado y verificado | 2026-07-26 | [mvp-execution-roadmap.md](../mvp-execution-roadmap.md) M0 |
 | [006](./006-m1-outbox-relay.md) | **M1** · Relay outbox → Kafka (`Nexo.BuildingBlocks.Outbox`) | ✅ Completado y verificado | 2026-07-26 | [mvp-execution-roadmap.md](../mvp-execution-roadmap.md) M1 |
+| [007](./007-m2-event-engine.md) | **M2** · Capa 4 mínima: motor de eventos (`Nexo.EventEngine`, progreso por ejecución) | ✅ Completado y verificado | 2026-07-26 | [mvp-execution-roadmap.md](../mvp-execution-roadmap.md) M2 |
 
 ## Estado general del código
 
@@ -43,12 +44,16 @@ verificó y qué decisiones se tomaron al bajar el diseño a código*.
 | `Nexo.MasterData` | master data | ✅ Implementado y verificado ([002](./002-masterdata.md)) |
 | `Nexo.WorkModel` | 2 | ✅ Implementado y verificado ([003](./003-workmodel.md)) |
 | `Nexo.Execution` | 3 | ✅ Implementado y verificado ([004](./004-execution.md)) |
+| `Nexo.EventEngine` | 4 | ✅ Mínimo implementado y verificado ([007](./007-m2-event-engine.md)) · progreso por ejecución en memoria |
+| **Plataforma local** (dev-auth [005](./005-m0-dev-auth.md) · relay outbox→Kafka [006](./006-m1-outbox-relay.md)) | transversal | ✅ Verificado |
 | `Nexo.Tenancy` · `Nexo.Identity` · `Nexo.Ingestion` · resto | varias | ⬜ Pendiente |
 
-> **Núcleo del modelo por capas (2→3) completo en código.** Con MasterData + WorkModel + Execution, la
-> cadena Proceso → Ejecución (lote y proyecto) está implementada y verificada. Lo que falta para un flujo
-> vivo end-to-end: el **motor de eventos (Capa 4)**, el **relay del outbox a Kafka** y la **integración
-> gRPC entre servicios** (hoy cada uno se verifica en aislamiento).
+> **Núcleo del modelo por capas (2→3→4) en código.** Con MasterData + WorkModel + Execution, la cadena
+> Proceso → Ejecución (lote y proyecto) está implementada y verificada; con el **relay outbox→Kafka** ([006](./006-m1-outbox-relay.md))
+> y el **motor de eventos mínimo (Capa 4)** ([007](./007-m2-event-engine.md)) los eventos ya fluyen y se
+> proyecta **progreso por ejecución**. Lo que falta para un flujo **vivo end-to-end por API**: la **integración
+> gRPC** WorkModel→Execution, la **ingesta/captura manual** (M3) y el **tablero** (M4). Ver el
+> [roadmap de ejecución](../mvp-execution-roadmap.md).
 
 ## Pendientes transversales acumulados
 

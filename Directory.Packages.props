@@ -21,6 +21,8 @@
     <!-- Mensajería -->
     <PackageVersion Include="MassTransit" Version="8.2.5" />
     <PackageVersion Include="MassTransit.Kafka" Version="8.2.5" />
+    <PackageVersion Include="Confluent.Kafka" Version="2.5.2" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.1" />
 
     <!-- Observabilidad -->
     <PackageVersion Include="Serilog.AspNetCore" Version="8.0.2" />

@@ -11,6 +11,7 @@ using Nexo.BuildingBlocks.Observability;
 using Nexo.BuildingBlocks.Web;
 using Nexo.MasterData.Api;
 using Nexo.MasterData.Application;
+using Nexo.BuildingBlocks.Outbox;
 using Nexo.MasterData.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -33,6 +34,9 @@ builder.Services.AddValidatorsFromAssemblyContaining<CreateItemCommandValidator>
 
 // --- Infrastructure: per-tenant MasterDataDbContext (connection resolved at request time) ---
 builder.Services.AddMasterDataInfrastructure();
+
+// --- Outbox relay (M1): drains master.outbox_messages to Kafka every couple of seconds ---
+builder.Services.AddOutboxRelay<MasterDataDbContext>();
 
 // --- Messaging: MassTransit control bus + Kafka rider with the domain producers ---
 // NOTE: publication is via the transactional outbox (platform.outbox_messages, written in

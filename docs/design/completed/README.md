@@ -32,6 +32,7 @@ verificó y qué decisiones se tomaron al bajar el diseño a código*.
 | [003](./003-workmodel.md) | Servicio `Nexo.WorkModel` (Capa 2 · Procesos + DAG, MOD-18) | ✅ Completado y verificado | 2026-07-24 | [03](../03-data-schema.md) §2.6 · [04](../04-service-contracts.md) §2.6 |
 | [004](./004-execution.md) | Servicio `Nexo.Execution` (Capa 3 · Lote y Proyecto, PRD-16) | ✅ Completado y verificado | 2026-07-25 | [03](../03-data-schema.md) §2.7-2.8 · [04](../04-service-contracts.md) §2.7 |
 | [005](./005-m0-dev-auth.md) | **M0** · Modo dev sin auth (bypass en Development) | ✅ Completado y verificado | 2026-07-26 | [mvp-execution-roadmap.md](../mvp-execution-roadmap.md) M0 |
+| [006](./006-m1-outbox-relay.md) | **M1** · Relay outbox → Kafka (`Nexo.BuildingBlocks.Outbox`) | ✅ Completado y verificado | 2026-07-26 | [mvp-execution-roadmap.md](../mvp-execution-roadmap.md) M1 |
 
 ## Estado general del código
 
@@ -55,7 +56,7 @@ Los que **cruzan varios servicios** y conviene no perder de vista:
 
 | Pendiente | Prioridad | Origen | Estado |
 |---|---|---|---|
-| **Relay del outbox → Kafka**: los eventos se persisten pero nadie los publica | **Alta** | [001](./001-scaffold-inicial.md) | Abierto |
+| ~~**Relay del outbox → Kafka**: los eventos se persisten pero nadie los publica~~ | Alta | [001](./001-scaffold-inicial.md) | ✅ Saldado en [006](./006-m1-outbox-relay.md) (M1) |
 | ~~Alinear el outbox de `Nexo.Production`~~ + actualizar `03-data-schema.md` | Alta | [002](./002-masterdata.md) | ✅ Saldado en [003](./003-workmodel.md) |
 | **Registrar validadores en `Nexo.Production`** (los suyos no se ejecutan) | Media | [002](./002-masterdata.md) | Abierto |
 | **Sin servicio de Identity**: no se puede ejercitar escritura autenticada end-to-end | Media | [001](./001-scaffold-inicial.md) | 🟡 Mitigado en local por [005](./005-m0-dev-auth.md) (bypass dev); Identity real = M5 |

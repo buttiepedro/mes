@@ -11,6 +11,7 @@ using Nexo.BuildingBlocks.Observability;
 using Nexo.BuildingBlocks.Web;
 using Nexo.WorkModel.Api;
 using Nexo.WorkModel.Application;
+using Nexo.BuildingBlocks.Outbox;
 using Nexo.WorkModel.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -33,6 +34,9 @@ builder.Services.AddValidatorsFromAssemblyContaining<CreateProcessCommandValidat
 
 // --- Infrastructure: per-tenant WorkModelDbContext (connection resolved at request time) ---
 builder.Services.AddWorkModelInfrastructure();
+
+// --- Outbox relay (M1): drains work.outbox_messages to Kafka every couple of seconds ---
+builder.Services.AddOutboxRelay<WorkModelDbContext>();
 
 // --- Messaging: MassTransit control bus + Kafka rider with the domain producers ---
 // NOTE: publication is via the transactional outbox (work.outbox_messages, written in

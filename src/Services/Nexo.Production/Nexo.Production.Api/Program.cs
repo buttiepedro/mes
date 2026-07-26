@@ -10,6 +10,7 @@ using Nexo.BuildingBlocks.Observability;
 using Nexo.BuildingBlocks.Web;
 using Nexo.Production.Api;
 using Nexo.Production.Application;
+using Nexo.BuildingBlocks.Outbox;
 using Nexo.Production.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -28,6 +29,9 @@ builder.Services.AddApplication(typeof(RegisterProductionCommand).Assembly);
 
 // --- Infrastructure: per-tenant ProductionDbContext (connection resolved at request time) ---
 builder.Services.AddProductionInfrastructure();
+
+// --- Outbox relay (M1): drains production.outbox_messages to Kafka every couple of seconds ---
+builder.Services.AddOutboxRelay<ProductionDbContext>();
 
 // --- Messaging: MassTransit control bus + Kafka rider with the domain producers ---
 // NOTE: publication is via the transactional outbox (platform.outbox_messages, written in

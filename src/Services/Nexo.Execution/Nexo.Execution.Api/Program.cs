@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Nexo.BuildingBlocks.Application;
 using Nexo.BuildingBlocks.Messaging;
+using Nexo.BuildingBlocks.Outbox;
 using Nexo.BuildingBlocks.MultiTenancy;
 using Nexo.BuildingBlocks.Observability;
 using Nexo.BuildingBlocks.Web;
@@ -34,6 +35,9 @@ builder.Services.AddValidatorsFromAssemblyContaining<CreateExecutionCommandValid
 
 // --- Infrastructure: per-tenant ExecutionDbContext (connection resolved at request time) ---
 builder.Services.AddExecutionInfrastructure();
+
+// --- Outbox relay (M1): drains execution.outbox_messages to Kafka every couple of seconds ---
+builder.Services.AddOutboxRelay<ExecutionDbContext>();
 
 // --- Messaging: MassTransit control bus + Kafka rider with the domain producers ---
 // NOTE: publication is via the transactional outbox (execution.outbox_messages, written in

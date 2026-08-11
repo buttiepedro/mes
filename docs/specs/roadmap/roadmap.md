@@ -1,5 +1,8 @@
 # Nexo — Roadmap por fases
 
+> ## ⚠️ CAMBIO DE ENCUADRE (2026-08-11) — Nexo es ahora un módulo de HEXA
+> Nexo **deja de ser un MES autónomo** y pasa a ser el **módulo de _generación de eventos + visión por computadora_ de HEXA** (el ERP). **Este roadmap (fases MVP→V1→V2→Enterprise de un producto autónomo, "ERP opcional", master data propia) queda SUPERADO.** El plan vigente es **[docs/design/hexa-integration/README.md](../../design/hexa-integration/README.md)** y el brief para HEXA **[HEXA-INTEGRATION.md](../../../HEXA-INTEGRATION.md)**.
+
 > **Documento:** `specs/roadmap/roadmap.md` · **Estado:** Borrador v0.3 · **Actualizado:** 2026-07-26
 > **Roles:** Product Manager · Software Architect · UX Designer
 > **Relacionados:** [vision.md](./vision.md) · [milestones.md](./milestones.md) · [backlog.md](./backlog.md) · [idea.md](../idea.md) · [product.md](../specs/product.md) · [layered-architecture.md](../specs/layered-architecture.md) · [master-data.md](../specs/master-data.md) · [architecture.md](../specs/architecture.md) · [modules.md](../specs/modules.md) · [future-features.md](../specs/future-features.md) · [design/completed/](../../design/completed/README.md)

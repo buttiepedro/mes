@@ -1,6 +1,11 @@
 # Roadmap de ejecución del MVP
 
-> **Documento:** `docs/design/mvp-execution-roadmap.md` · **Estado:** Activo · **Actualizado:** 2026-07-26
+> ## ⚠️ CAMBIO DE ENCUADRE (2026-08-11) — Nexo es ahora un módulo de HEXA
+> La **tajada vertical ya construida y verificada (M0–M4 + M3)** sigue **vigente**: es la **base del módulo MES de HEXA** (motor de eventos + tablero + flujo real). Lo que **queda SUPERADO** son las fases **M5–M16** que apuntaban a un MES **autónomo** (Identity propio, master data propia, Control Plane, conector Odoo, etc.). Esas se reemplazan por las **fases de reposicionamiento e integración (R0–R8)** definidas en **[docs/design/hexa-integration/README.md](./hexa-integration/README.md)** §5. Brief para HEXA: **[HEXA-INTEGRATION.md](../../HEXA-INTEGRATION.md)**.
+>
+> **Mapeo rápido:** M8 (Identity) → se descarta (HEXA es el IdP) · MasterData → se elimina (HEXA es dueño) · M5 gemelo digital / ingesta / **visión** → siguen siendo del MES (fases R6–R7) · el resto de dominios de negocio → migran a HEXA.
+
+> **Documento:** `docs/design/mvp-execution-roadmap.md` · **Estado:** Activo (encuadre actualizado 2026-08-11) · **Actualizado:** 2026-08-11
 > **Relacionados:** [design/completed/](./completed/README.md) · [roadmap.md](../specs/roadmap/roadmap.md) (estratégico) · [02-event-model.md](./02-event-model.md) · [04-service-contracts.md](./04-service-contracts.md)
 
 Este documento es el **plan de ejecución concreto** desde lo ya construido hasta el **MVP completo**, aterrizado en **milestones ejecutables y verificables**. No repite el roadmap estratégico ([roadmap.md](../specs/roadmap/roadmap.md), que define las fases MVP→V1→V2→Enterprise); lo baja a "qué construimos y en qué orden". Para todo lo posterior al MVP (motor de reglas, protocolos industriales, capa de costo, trazabilidad, reportes, marketplace, multi-ERP, IA) manda el roadmap estratégico.

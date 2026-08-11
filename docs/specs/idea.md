@@ -1,5 +1,8 @@
 # Nexo — La idea
 
+> ## ⚠️ CAMBIO DE ENCUADRE (2026-08-11) — Nexo es ahora un módulo de HEXA
+> A partir del **2026-08-11**, Nexo **deja de ser un MES autónomo** y pasa a ser el **módulo de _generación de eventos + visión por computadora_ de HEXA** (el ERP), en repo separado pero integrado. **Las afirmaciones de este documento sobre "sistema autónomo", "ERP opcional", "master data propia" o "modo standalone" quedan SUPERADAS.** Encuadre vigente y plan de migración: **[docs/design/hexa-integration/README.md](../design/hexa-integration/README.md)**. Brief para el equipo de HEXA: **[HEXA-INTEGRATION.md](../../HEXA-INTEGRATION.md)**.
+
 > **Documento:** `specs/idea.md` · **Estado:** Borrador v0.3 · **Actualizado:** 2026-07-26
 > **Roles:** Product Manager · Software Architect · UX Designer
 > **Relacionados:** [product.md](./specs/product.md) · [layered-architecture.md](./specs/layered-architecture.md) · [architecture.md](./specs/architecture.md) · [modules.md](./specs/modules.md) · [roadmap.md](./roadmap/roadmap.md) · [vision.md](./roadmap/vision.md) · [design/completed/](../design/completed/README.md) · [roadmap de ejecución](../design/mvp-execution-roadmap.md)

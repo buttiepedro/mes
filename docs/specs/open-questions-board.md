@@ -1,5 +1,8 @@
 # Tablero maestro de preguntas abiertas — Plataforma "Nexo"
 
+> ## ⚠️ CAMBIO DE ENCUADRE (2026-08-11) — Nexo es ahora un módulo de HEXA
+> Muchas de estas decisiones (PRD/COM sobre pricing, ERP opcional, master data propia, geografía, Identity propio) **quedan SUPERADAS o cambian de dueño**: HEXA aporta identidad, tenant, master data, ERP y comercialización; el MES es su módulo de eventos + visión. Revisar contra **[docs/design/hexa-integration/README.md](../design/hexa-integration/README.md)** (§9 lista las decisiones nuevas del *seam*). Brief HEXA: **[HEXA-INTEGRATION.md](../../HEXA-INTEGRATION.md)**.
+
 > **Documento:** `specs/open-questions-board.md` · **Estado:** Borrador v0.2 · **Actualizado:** 2026-07-25
 > **Roles:** Product Manager · Software Architect · UX Designer
 > **Relacionados:** [open-questions.md](./specs/open-questions.md) · [layered-architecture.md](./specs/layered-architecture.md) · [README.md](./README.md)

@@ -1,5 +1,8 @@
 # Nexo — Visión y estrategia de largo plazo
 
+> ## ⚠️ CAMBIO DE ENCUADRE (2026-08-11) — Nexo es ahora un módulo de HEXA
+> Nexo **deja de ser un MES autónomo** y pasa a ser el **módulo de _generación de eventos + visión por computadora_ de HEXA** (el ERP). **La visión de "estándar de facto autónomo, ERP opcional" de este documento queda SUPERADA**: la estrategia de producto ahora es la de HEXA; el MES es su subsistema sensor/eventos. Encuadre vigente: **[docs/design/hexa-integration/README.md](../../design/hexa-integration/README.md)** · brief HEXA: **[HEXA-INTEGRATION.md](../../../HEXA-INTEGRATION.md)**.
+
 > **Documento:** `specs/roadmap/vision.md` · **Estado:** Borrador v0.1 · **Actualizado:** 2026-07-13
 > **Roles:** Product Manager · Software Architect · UX Designer
 > **Relacionados:** [idea.md](../idea.md) · [roadmap.md](./roadmap.md) · [milestones.md](./milestones.md) · [backlog.md](./backlog.md) · [layered-architecture.md](../specs/layered-architecture.md) · [master-data.md](../specs/master-data.md) · [future-features.md](../specs/future-features.md) · [product.md](../specs/product.md) · [architecture.md](../specs/architecture.md)

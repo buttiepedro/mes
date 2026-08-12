@@ -6,6 +6,8 @@
 
 Decisiones que respeta: fuentes **visión + señal**; reglas de complejidad **completa** (simple → combinada → temporal → agregación); **eventos crudos** (HEXA decide); catálogo de `event_type` **libre por tenant** (la regla lo nombra); entrega **tiempo real**.
 
+> **✅ Implementado (V-C, 2026-08-12):** el motor `src/cloud/Nexo.RulesEngine` evalúa esta gramática — `match`/`signal`/`and`/`or`/`not`/`sustained`/`count`, con world-state, cooldown, tick y templating de payload (`{{obs.*}}`/`{{count}}`/`{{duration_seconds}}`). Verificado con observaciones sintéticas (defecto→`defecto_detectado`, 3 defectos→`calidad_degradada`, persona sin casco 2s→`riesgo_epp`). **Pendiente:** `sequence`; cargar reglas desde la config (config-bundle) en vez de por HTTP; salida a HEXA (event-gateway).
+
 ---
 
 ## 1. Observación (lo que el motor consume)

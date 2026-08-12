@@ -145,7 +145,8 @@ GET  {MES}/embed/tablero?token=<jwt-user>  → HTML embebible (tablero en vivo)
 ```
 
 ### 4.5 Identidad
-- **Usuario (UI embebida + lectura):** las requests al MES llevan el **JWT de usuario de HEXA** (HS256). El MES lo valida con el **mismo `JWT_SECRET`** (compartir como secreto de plataforma) o con un **par de claves dedicado** que HEXA emita para el MES. Extrae `company_id` → resuelve su tenant (`hexa_{slug}_mes`).
+- **Usuario (UI embebida + lectura):** las requests al MES llevan el **JWT de usuario de HEXA** (HS256). El MES lo valida con el **mismo `JWT_SECRET`** (compartir como secreto de plataforma) o con un **par de claves dedicado** que HEXA emita para el MES. Extrae `company_id` → resuelve su tenant (`hexa_{slug}_mes`). **✅ Ya implementado y verificado del lado MES** (modo `Auth:Mode=HexaJwt`: valida HS256, mapea `company_id`→tenant y `role`→scopes).
+  > ⚠️ **Requisito de interop:** el secreto compartido debe tener **≥ 256 bits (32 bytes)**. El validador .NET (Microsoft.IdentityModel, RFC 7518) rechaza secretos más cortos con IDX10503. El default dev de HEXA `insecure-jwt-secret` (19 bytes) **no** valida — usar un secreto largo en ambos lados.
 - **Servicio (context push HEXA→MES y provisioning):** HEXA usa un **service token** que el MES valida.
 - **Servicio (webhooks MES→HEXA):** el MES firma cada webhook con un **secreto por empresa** (HMAC); HEXA lo verifica. El secreto se acuerda en el provisioning (§4.1).
 

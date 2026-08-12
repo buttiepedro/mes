@@ -23,7 +23,16 @@ builder.Services.AddHostedService<ExecutionEventsConsumer>();
 // --- AuthN: dev bypass in Development (M0), real JWT/Duende elsewhere ---
 if (builder.Environment.IsDevelopment())
 {
-    builder.Services.AddNexoDevAuth();
+    // Default local: dev-bypass. Set Auth:Mode=HexaJwt to validate real HEXA tokens (HEXA is the IdP).
+    var authMode = builder.Configuration["Auth:Mode"];
+    if (authMode is not null && authMode.Equals("HexaJwt", StringComparison.OrdinalIgnoreCase))
+    {
+        builder.Services.AddNexoHexaJwt(builder.Configuration);
+    }
+    else
+    {
+        builder.Services.AddNexoDevAuth();
+    }
 }
 else
 {

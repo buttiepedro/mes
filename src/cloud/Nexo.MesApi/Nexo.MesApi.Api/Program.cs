@@ -71,7 +71,11 @@ app.UseNexoWeb();          // exception handling + tenant resolution
 app.UseAuthorization();
 
 app.MapLocationNodeEndpoints();
+app.MapCameraEndpoints();
+app.MapSignalEndpoints();
+app.MapCatalogEndpoints();
 app.MapRuleEndpoints();
+app.MapConfigBundleEndpoints();
 
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 app.MapHealthChecks("/health/ready");

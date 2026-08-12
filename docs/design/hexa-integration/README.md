@@ -44,31 +44,36 @@ La tesis se sostiene porque los dos sistemas resuelven problemas de naturaleza d
 | Entidad de configuración | Qué es |
 |---|---|
 | **Planta** | Layout operativo: líneas, zonas, puestos. El "dónde". |
-| **Cámara** | Dispositivo de captura, ubicado en la planta, apuntando a una zona/línea. |
-| **Objeto reconocible** | Clase de detección: pieza, caja, herramienta, persona, EPP, **defecto**… (catálogo). |
-| **Acción reconocible** | Patrón espacio-temporal: "operario coloca pieza", "máquina detenida", "caja llena", "persona en zona restringida"… (catálogo). |
-| **Regla** | Combinación **(cámara × objeto(s) × acción(es) × condición espacio-temporal)** → **genera un Evento**. Ej.: *"en cámara-3, si aparece `caja` con acción `llena` por >5 s → evento `caja_completa`"*. |
+| **Cámara** | Fuente de **visión**, ubicada en la planta, apuntando a una zona/línea. |
+| **Dispositivo de señal** (datalogger / PLC) | Fuente **industrial**, conectada por **protocolo** (OPC-UA / Modbus / MQTT / Siemens S7), expone **señales/tags**. |
+| **Objeto reconocible** | Clase de detección de **visión**: pieza, caja, herramienta, persona, EPP, **defecto**… (catálogo). |
+| **Acción reconocible** | Patrón espacio-temporal de **visión**: "operario coloca pieza", "máquina detenida", "caja llena", "persona en zona restringida"… (catálogo). |
+| **Señal / Tag** | Variable medida por un dispositivo: contador, temperatura, estado, velocidad, peso… (catálogo por dispositivo). |
+| **Regla** | Combinación de **cualquier fuente** —(cámara × objeto × acción) **y/o** (señal × condición)— con condición espacio-temporal → **genera un Evento**. Ej. visión: *"cámara-3, `caja` + acción `llena` >5 s → `caja_completa`"*. Ej. señal: *"PLC-1, tag `temp` > 80 °C → `sobrecalentamiento`"*. Ej. combinada: *"persona en zona X (visión) **y** máquina en `running` (PLC) → `riesgo`"*. |
 
-**Runtime:**
-1. Las cámaras alimentan el **pipeline de visión** → **detección de objetos** + **reconocimiento de acciones**.
-2. El **motor de reglas** evalúa las detecciones contra las reglas configuradas → emite **Eventos canónicos** (cámara, objeto, acción, timestamp, frame/evidencia).
-3. Los eventos se **exponen a HEXA**, que les da **significado de negocio**: **trabar una orden**, **finalizar una producción**, registrar una no-conformidad, disparar una alerta, etc.
+**Runtime (multi-fuente):**
+1. **Fuentes:** las **cámaras** alimentan el **pipeline de visión** (detección de objetos + reconocimiento de acciones); los **dispositivos de señal** (PLC/datalogger) alimentan un **edge/gateway** que lee por **protocolo** (OPC-UA/Modbus/MQTT/S7) las **señales/tags**.
+2. Ambas fuentes se **normalizan a un stream común de observaciones** (detección de visión **o** lectura de señal).
+3. El **motor de reglas** (agnóstico de la fuente) evalúa las observaciones contra las reglas → emite **Eventos canónicos** (fuente, timestamp, valor/frame de evidencia).
+4. Los eventos se **exponen a HEXA**, que les da **significado de negocio**: **trabar una orden**, **finalizar una producción**, registrar una no-conformidad, disparar una alerta, etc.
 
 **Modelo de dominio del MES (nuevo núcleo):**
 ```
-Planta → Cámara → (Objeto, Acción) → Regla → Evento → HEXA
+Planta ─┬─ Cámara ──────────────────→ (Objeto, Acción) ─┐
+        └─ Dispositivo de señal ─────→ Señal/Tag ────────┤─→ Regla → Evento → HEXA
+           (PLC/datalogger vía OPC-UA/Modbus/MQTT/S7)     ┘
 ```
 
-**Frontera afinada:** el MES **no** modela órdenes, procesos ni DAG (eso es de la producción de HEXA). El MES define **planta / cámaras / objetos / acciones / reglas** y **emite eventos**; HEXA los interpreta.
+**Frontera afinada:** el MES **no** modela órdenes, procesos ni DAG (eso es de la producción de HEXA). El MES define **planta / cámaras / dispositivos de señal / objetos / acciones / señales / reglas** y **emite eventos**; HEXA los interpreta.
 
-**Impacto honesto en lo ya construido:** bajo esta definición, el núcleo .NET de **procesos/ejecución (`WorkModel`, `Execution`, `MasterData`) NO es el núcleo del MES** — migra a la producción de HEXA o se retira. **Sobrevive del MES:** el **backbone de eventos** (Kafka / outbox / relay), el **shell del tablero** (se reorienta a visualizar cámaras/eventos), y el **seam de identidad HEXA** ya construido. El resto se reemplaza por: **configuración (planta/cámaras/objetos/acciones/reglas)** + **pipeline de visión** + **motor de reglas de eventos**.
+**Impacto honesto en lo ya construido:** bajo esta definición, el núcleo .NET de **procesos/ejecución (`WorkModel`, `Execution`, `MasterData`, `Production`) NO es el núcleo del MES** — se **retira** (migra a la producción de HEXA). **Sobrevive del MES:** el **backbone de eventos** (Kafka / outbox / relay), el **shell del tablero** (se reorienta a cámaras/eventos), el **seam de identidad HEXA** ya construido, y —recuperada del roadmap Nexo original— la **ingesta industrial** (edge + protocolos), ahora como **fuente co-igual con la visión**. El resto se reemplaza por: **configuración** (planta/cámaras/dispositivos/objetos/acciones/señales/reglas) + **pipeline de visión** + **ingesta industrial** + **motor de reglas**.
 
 **Plan MES reorientado (reemplaza el detalle de §5 para el núcleo):**
-- **V-A · Configuración**: ABM + API de **planta, cámaras, catálogo de objetos, catálogo de acciones, reglas** (el modelo de dominio de arriba). Es lo primero: sin config no hay eventos.
-- **V-B · Pipeline de visión**: ingesta de cámara (RTSP/IP/USB) → **detección de objetos** + **reconocimiento de acciones** (Python/GPU, ONNX/PyTorch).
-- **V-C · Motor de reglas**: evalúa (objeto × acción × cámara × condición) → **Evento canónico**.
+- **V-A · Configuración**: ABM + API del modelo de dominio — **planta, cámaras, dispositivos de señal, catálogo de objetos, catálogo de acciones, catálogo de señales/tags, reglas**. Es lo primero: sin config no hay eventos.
+- **V-B · Fuentes:** **(b1) pipeline de visión** (cámara RTSP/IP/USB → detección de objetos + reconocimiento de acciones, Python/GPU); **(b2) ingesta industrial** (edge/gateway + adapters OPC-UA/Modbus/MQTT/S7 + datalogger/CSV).
+- **V-C · Motor de reglas** (agnóstico de fuente): observaciones (visión **y/o** señal) × condición → **Evento canónico**.
 - **V-D · Salida a HEXA**: webhooks/API de eventos (§4.3) + **seam de identidad (✅ hecho)**.
-- **V-E · Tablero de planta**: reorienta el tablero actual a **cámaras + eventos en vivo** (no progreso de tareas).
+- **V-E · Tablero de planta**: reorienta el tablero actual a **cámaras + señales + eventos en vivo** (no progreso de tareas).
 
 ---
 

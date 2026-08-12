@@ -34,10 +34,6 @@ if (-not $NoBuild) {
 }
 
 $services = @(
-  @{ Name = 'Production'; Port = 5080; Proj = 'src\Services\Nexo.Production\Nexo.Production.Api' },
-  @{ Name = 'MasterData'; Port = 5081; Proj = 'src\Services\Nexo.MasterData\Nexo.MasterData.Api' },
-  @{ Name = 'WorkModel';  Port = 5082; Proj = 'src\Services\Nexo.WorkModel\Nexo.WorkModel.Api'  },
-  @{ Name = 'Execution';  Port = 5083; Proj = 'src\Services\Nexo.Execution\Nexo.Execution.Api'  },
   @{ Name = 'EventEngine'; Port = 5084; Proj = 'src\Services\Nexo.EventEngine\Nexo.EventEngine.Api' }
 )
 

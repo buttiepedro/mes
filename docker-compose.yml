@@ -8,7 +8,7 @@ name: nexo
 #
 # Uso:
 #   docker compose up -d                 # levanta la infra (postgres, redpanda, console, minio, jaeger)
-#   docker compose --profile app up -d   # además compila y levanta la Production.Api
+#   Las APIs del MES corren fuera de Docker: scripts/run-local.ps1
 #
 # Consolas:  Redpanda http://localhost:8080 · MinIO http://localhost:9001 · Jaeger http://localhost:16686
 
@@ -90,31 +90,6 @@ services:
       - "16686:16686"  # UI
       - "4317:4317"    # OTLP gRPC
       - "4318:4318"    # OTLP HTTP
-    networks: [nexo]
-
-  # --- Servicios de aplicación (opcionales; profile "app") ---
-  production-api:
-    profiles: ["app"]
-    build:
-      context: .
-      dockerfile: src/Services/Nexo.Production/Nexo.Production.Api/Dockerfile
-    environment:
-      ASPNETCORE_ENVIRONMENT: Development
-      ASPNETCORE_URLS: http://+:8080
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
-      Kafka__BootstrapServers: redpanda:29092
-      # Tenant demo (resolver local por configuración — ver ConfigurationTenantConnectionResolver)
-      Tenants__0__Key: demo
-      Tenants__0__TenantId: 00000000-0000-0000-0000-0000000000d1
-      Tenants__0__SchemaVersion: "1"
-      Tenants__0__ConnectionString: "Host=postgres;Port=5432;Database=nexo_tenant_demo;Username=${POSTGRES_USER:-nexo};Password=${POSTGRES_PASSWORD:-nexo}"
-    ports:
-      - "8090:8080"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redpanda:
-        condition: service_started
     networks: [nexo]
 
 volumes:

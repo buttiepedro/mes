@@ -34,6 +34,7 @@ if (-not $NoBuild) {
 }
 
 $services = @(
+  @{ Name = 'MesApi';      Port = 5085; Proj = 'src\cloud\Nexo.MesApi\Nexo.MesApi.Api' },
   @{ Name = 'EventEngine'; Port = 5084; Proj = 'src\Services\Nexo.EventEngine\Nexo.EventEngine.Api' }
 )
 

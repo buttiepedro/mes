@@ -1,6 +1,7 @@
-# V-A · Modelo de datos de configuración (propuesta)
+# V-A · Modelo de datos de configuración
 
-> **Documento:** `docs/design/config-model.md` · **Creado:** 2026-08-11 · **Estado:** propuesta.
+> **Documento:** `docs/design/config-model.md` · **Creado:** 2026-08-11 · **Estado:** ✅ implementado y verificado (2026-08-12).
+> **Servicio:** `src/cloud/Nexo.MesApi` (Clean Arch, 4 proyectos). Las 8 entidades están en el schema `config` de la tenant DB (migración `InitialConfig`). Endpoints de ejemplo: `/v1/location-nodes`, `/v1/rules` (trigger/emit como JSON). Auth: dev-bypass o JWT de HEXA (`Auth:Mode=HexaJwt`). Verificado: build 0 errores · migración aplicada (8 tablas) · CRUD end-to-end.
 > El dominio de **configuración** del MES (lo que "definimos": planta, cámaras, señales, catálogos, reglas).
 > Vive en la **tenant DB** (`hexa_{slug}_mes`, Neon). Lo administra `Nexo.MesApi`; lo **consume el edge** (pull) y el **rules-engine**. Deriva de [rules-and-events.md](./rules-and-events.md) y [questions.md](../questions.md).
 

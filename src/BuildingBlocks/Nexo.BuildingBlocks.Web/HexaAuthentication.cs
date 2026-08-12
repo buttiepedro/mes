@@ -9,59 +9,41 @@ using Microsoft.IdentityModel.Tokens;
 namespace Nexo.BuildingBlocks.Web;
 
 /// <summary>
-/// Validates JWTs issued by <b>HEXA</b> (the ERP) so the MES trusts HEXA as its identity provider — the
-/// MES has no IdP of its own. HEXA signs <b>HS256</b> with a shared secret and puts the user in
-/// <c>sub</c>, the tenant in <c>company_id</c> and the role in <c>role</c> (HEXA `auth-multitenancy` spec).
+/// Valida los JWT emitidos por HEXA (el ERP) — HEXA es el IdP del MES, no hay IdP propio. HEXA firma
+/// HS256 con un secreto compartido y pone el usuario en <c>sub</c>, el tenant en <c>company_id</c> y el
+/// rol en <c>role</c>. Este handler: valida firma HS256 + expiración; mapea <c>company_id</c> → el claim
+/// <c>tenant_id</c> que lee el tenant-middleware del MES; y deriva scopes Nexo del <c>role</c> de HEXA
+/// (owner/admin/editor → read+write; resto → read). Se activa con <c>Auth:Mode=HexaJwt</c>; el secreto
+/// viene de <c>Hexa:JwtSecret</c>.
 /// </summary>
-/// <remarks>
-/// This handler: (1) validates the HS256 signature + expiry against the shared secret; (2) maps
-/// <c>company_id</c> → the <c>tenant_id</c> claim that <see cref="TenantResolutionMiddleware"/> reads;
-/// (3) derives Nexo scopes from the HEXA <c>role</c> (owner/admin/editor → read+write, otherwise read),
-/// since HEXA tokens carry no per-scope claim. Enable it with <c>Auth:Mode=HexaJwt</c>; the shared secret
-/// comes from <c>Hexa:JwtSecret</c> (fallback <c>JWT_SECRET</c>). This is the seam that replaces the
-/// abandoned Duende plan — see docs/design/hexa-integration/README.md.
-/// <para>
-/// ⚠️ Interop gotcha: for HS256, Microsoft.IdentityModel enforces RFC 7518 §3.2 — the shared secret MUST
-/// be at least 256 bits (32 bytes), otherwise every token fails signature validation with IDX10503.
-/// HEXA's real JWT_SECRET ("a long random string") satisfies this; HEXA's dev default
-/// (<c>insecure-jwt-secret</c>, 19 bytes) does NOT. Align on a ≥32-byte shared secret.
-/// </para>
-/// </remarks>
 public static class HexaAuthentication
 {
-    private const string TenantIdClaim = "tenant_id";
+    public const string TenantIdClaim = "tenant_id";
 
     private static readonly string[] WriteScopes =
     {
-        "nexo.masterdata.read", "nexo.masterdata.write",
-        "nexo.workmodel.read", "nexo.workmodel.write",
-        "nexo.execution.read", "nexo.execution.write",
-        "nexo.production.read", "nexo.production.write",
+        "nexo.mes.read", "nexo.mes.write",
     };
 
-    private static readonly string[] ReadScopes =
-    {
-        "nexo.masterdata.read", "nexo.workmodel.read", "nexo.execution.read", "nexo.production.read",
-    };
+    private static readonly string[] ReadScopes = { "nexo.mes.read" };
 
     public static AuthenticationBuilder AddNexoHexaJwt(this IServiceCollection services, IConfiguration configuration)
     {
-        // Matches HEXA's own dev default (`config.py` JWT_SECRET); override in every real deployment.
         var secret = configuration["Hexa:JwtSecret"]
             ?? configuration["JWT_SECRET"]
-            ?? "insecure-jwt-secret";
+            ?? "insecure-jwt-secret"; // igual al default dev de HEXA; se sobreescribe en despliegues reales
         var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
 
         return services
             .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
             {
-                options.MapInboundClaims = false; // keep raw HEXA claim names: sub, company_id, role
+                options.MapInboundClaims = false; // conserva los nombres crudos: sub, company_id, role
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateIssuerSigningKey = true,
                     IssuerSigningKey = signingKey,
-                    ValidateIssuer = false,   // HEXA access tokens carry no iss/aud
+                    ValidateIssuer = false,   // los tokens de HEXA no llevan iss/aud
                     ValidateAudience = false,
                     ValidateLifetime = true,
                     ClockSkew = TimeSpan.FromSeconds(30),
@@ -77,14 +59,14 @@ public static class HexaAuthentication
                             return Task.CompletedTask;
                         }
 
-                        // company_id → tenant_id (the tenant middleware reads tenant_id)
+                        // company_id → tenant_id (lo lee TenantResolutionMiddleware)
                         var companyId = identity.FindFirst("company_id")?.Value;
                         if (!string.IsNullOrWhiteSpace(companyId) && identity.FindFirst(TenantIdClaim) is null)
                         {
                             identity.AddClaim(new Claim(TenantIdClaim, companyId));
                         }
 
-                        // HEXA role → Nexo scopes (HEXA has no per-scope claim)
+                        // role de HEXA → scopes Nexo (HEXA no trae claim de scope)
                         if (identity.FindFirst("scope") is null)
                         {
                             var role = identity.FindFirst("role")?.Value?.ToLowerInvariant();

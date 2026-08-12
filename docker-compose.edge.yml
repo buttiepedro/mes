@@ -1,0 +1,56 @@
+name: nexo-edge
+
+# 🏭 PLANO EDGE del MES — se despliega UNA VEZ POR TENANT/PLANTA, en el sitio (cerca de cámaras y PLCs).
+# Captura visión y señales industriales, y envía OBSERVACIONES LIVIANAS por HTTPS a la nube (autenticado
+# como su tenant). NO manda video crudo. NO corre Kafka: cada agente bufferea local (store-and-forward)
+# ante cortes de conectividad. El edge NUNCA habla con HEXA directo — habla con la nube.
+#
+# Config por sitio (.env del edge):
+#   CLOUD_INGEST_URL   → endpoint de ingesta de la nube (mes-api), p.ej. https://mes.tuempresa.com/v1/ingest
+#   TENANT_TOKEN       → credencial del tenant (la nube la valida y sabe de qué empresa viene)
+#   (cámaras y PLCs se configuran desde la nube y el edge los descubre, o por archivo local)
+#
+# Uso (en el sitio):  docker compose -f docker-compose.edge.yml up -d
+# WIP: los servicios se construyen en V-B (edge-vision Python/GPU · edge-signals).
+
+services:
+  edge-vision:
+    build: { context: ./src/edge/edge-vision, dockerfile: Dockerfile }
+    # Captura RTSP/USB + inferencia (objetos + acciones) en GPU local → emite DETECCIONES (no frames).
+    # Un contenedor por cámara/grupo; escalás agregando instancias.
+    environment:
+      CLOUD_INGEST_URL: ${CLOUD_INGEST_URL:?falta CLOUD_INGEST_URL}
+      TENANT_TOKEN: ${TENANT_TOKEN:?falta TENANT_TOKEN}
+      EDGE_BUFFER_DIR: /buffer          # store-and-forward ante cortes
+    volumes:
+      - visionbuffer:/buffer
+      - ./models:/models:ro             # modelos de visión (ONNX/PyTorch)
+    # GPU (descomentar en un host con NVIDIA + nvidia-container-toolkit):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }]
+    restart: unless-stopped
+    networks: [edge]
+
+  edge-signals:
+    build: { context: ./src/edge/edge-signals, dockerfile: Dockerfile }
+    # Adapters S7 / OPC-UA / Modbus / MQTT / datalogger → lecturas de señal normalizadas → HTTPS a la nube.
+    # Un contenedor por sitio; los protocolos son adapters (plugins) internos.
+    environment:
+      CLOUD_INGEST_URL: ${CLOUD_INGEST_URL:?falta CLOUD_INGEST_URL}
+      TENANT_TOKEN: ${TENANT_TOKEN:?falta TENANT_TOKEN}
+      EDGE_BUFFER_DIR: /buffer
+    volumes:
+      - signalbuffer:/buffer
+    # Los PLCs suelen estar en la red industrial del sitio; ajustar 'networks'/host según la planta.
+    restart: unless-stopped
+    networks: [edge]
+
+volumes:
+  visionbuffer:
+  signalbuffer:
+
+networks:
+  edge:
+    driver: bridge

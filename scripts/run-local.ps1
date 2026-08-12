@@ -21,7 +21,7 @@ $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' +
             ";C:\Program Files\dotnet;C:\Program Files\Docker\Docker\resources\bin;$env:USERPROFILE\.dotnet\tools"
 
 Write-Host '== Infra (docker compose) ==' -ForegroundColor Cyan
-docker compose up -d postgres redpanda redpanda-console minio jaeger | Out-Null
+docker compose -f docker-compose.cloud.yml up -d postgres redpanda redpanda-console minio jaeger | Out-Null
 for ($i = 0; $i -lt 30; $i++) {
   if ((docker inspect --format '{{.State.Health.Status}}' nexo-postgres-1 2>$null) -eq 'healthy') { break }
   Start-Sleep -Seconds 2

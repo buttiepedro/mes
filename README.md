@@ -29,6 +29,24 @@ La frontera: HEXA es el **plan y el registro** (órdenes, artículos, producció
 
 **Pendiente (por construir):** el dominio nuevo — **V-A** configuración (planta/cámaras/dispositivos/objetos/acciones/señales/reglas) · **V-B** fuentes (pipeline de visión + ingesta industrial) · **V-C** motor de reglas · **V-D** salida a HEXA · **V-E** tablero.
 
+## Arquitectura y despliegue
+
+Monorepo, **dos planos**, **dos compose**:
+
+| Plano | Se despliega | Servicios | Compose |
+|---|---|---|---|
+| ☁️ **Nube** | **una vez**, multi-tenant, habla con HEXA | `Nexo.MesApi` (config+tablero+BFF+ingesta) · `Nexo.RulesEngine` · `Nexo.EventGateway` + infra | `docker-compose.cloud.yml` |
+| 🏭 **Edge** | **una por tenant/planta** (en el sitio) | `edge-vision` (Python/GPU) · `edge-signals` (S7/OPC-UA/Modbus/MQTT/datalogger) | `docker-compose.edge.yml` |
+
+`edge (por tenant) → HTTPS observaciones → nube (Kafka interna → reglas → eventos) → HEXA`. El edge bufferea local (store-and-forward) y **nunca** habla con HEXA directo.
+
+```
+src/BuildingBlocks/                (.NET compartido)
+src/cloud/                         Nexo.MesApi · Nexo.RulesEngine · Nexo.EventGateway   (WIP)
+src/edge/                          edge-vision (Python) · edge-signals                 (WIP)
+src/Services/Nexo.EventEngine/     semilla de Nexo.MesApi (se migra a src/cloud/)
+```
+
 ## Documentación
 
 - **[docs/design/hexa-integration/README.md](docs/design/hexa-integration/README.md)** — plan de arquitectura e integración (los dos lados, frontera, contratos, decisiones). **Fuente de verdad.**

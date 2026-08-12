@@ -75,6 +75,22 @@ Planta ─┬─ Cámara ──────────────────�
 - **V-D · Salida a HEXA**: webhooks/API de eventos (§4.3) + **seam de identidad (✅ hecho)**.
 - **V-E · Tablero de planta**: reorienta el tablero actual a **cámaras + señales + eventos en vivo** (no progreso de tareas).
 
+**Arquitectura de servicios y topología de despliegue:** monorepo con **dos planos** y **dos compose**.
+
+| Plano | Se despliega | Servicios | Stack | Compose |
+|---|---|---|---|---|
+| ☁️ **Nube** | **una sola vez**, multi-tenant, habla con HEXA | `Nexo.MesApi` (config + tablero + BFF + **ingesta**), `Nexo.RulesEngine`, `Nexo.EventGateway` + Kafka/DB/storage | .NET | `docker-compose.cloud.yml` |
+| 🏭 **Edge** | **una por tenant/planta**, en el sitio | `edge-vision` (captura+inferencia), `edge-signals` (adapters S7/OPC-UA/Modbus/MQTT/datalogger) | Python/GPU · .NET/Python | `docker-compose.edge.yml` |
+
+**Flujo:** `edge (por tenant) → HTTPS observaciones → nube (ingesta → Kafka interna → reglas → eventos) → HEXA`. El edge **bufferea local** (store-and-forward) y publica por **HTTPS autenticado como su tenant** — **no** se expone Kafka al edge, y el edge **nunca** habla con HEXA directo (habla con la nube). **Detalle:** el edge produce alto volumen de detecciones **livianas** (no frames); la inferencia de visión corre en **GPU en el sitio**.
+
+```
+src/BuildingBlocks/   (.NET compartido)
+src/cloud/            Nexo.MesApi · Nexo.RulesEngine · Nexo.EventGateway
+src/edge/             edge-vision (Python) · edge-signals
+```
+> La **semilla** del lado nube es `src/Services/Nexo.EventEngine` (consumer Kafka + tablero + seam de identidad), que migra a `src/cloud/Nexo.MesApi`.
+
 ---
 
 ## 3. Modelo conceptual: la frontera HEXA ↔ MES

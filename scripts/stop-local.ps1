@@ -29,5 +29,5 @@ if (Test-Path $pidsFile) {
 if ($Infra) {
   $env:Path += ';C:\Program Files\Docker\Docker\resources\bin'
   Set-Location $root
-  docker compose stop
+  docker compose -f docker-compose.cloud.yml stop
 }

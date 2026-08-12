@@ -184,7 +184,7 @@ Lo que emite una regla y entrega el `event-gateway` a HEXA (webhook tiempo real)
 2. ✅ **Cooldown key = `rule_id` + `source`**: no se re-dispara la misma regla para la misma fuente antes de `cooldown_seconds`.
 3. ✅ **`same_track` configurable por nodo**: `sustained` y `sequence` aceptan `"same_track": true` para exigir que los matches sean del **mismo `track_id`** (vs cualquier match).
 4. ✅ **DSL/JSON primero** (este esquema, para el implementador); **editor visual no-code después**, sobre el mismo modelo.
-5. 🔲 **Plantillas de payload** — a decidir (ver §7).
+5. ✅ **Plantillas de payload = sustitución simple** (Opción A, §7): placeholders `{{obs.*}}` / `{{count}}` / `{{duration_seconds}}`, sin expresiones. Transformaciones complejas las hace HEXA (que recibe el dato crudo).
 
 ## 7. Plantillas de payload (a decidir)
 

@@ -35,6 +35,43 @@ La tesis se sostiene porque los dos sistemas resuelven problemas de naturaleza d
 
 ---
 
+## 2.5 Definición afinada del MES (2026-08-11) — sistema de eventos por visión
+
+> Refinamiento del alcance del MES posterior a la revisión inicial. **Acota y reorienta** lo de abajo: el MES no es un MES de procesos/órdenes, es un **motor de eventos guiado por visión por computadora**.
+
+**El MES es un sistema donde *nosotros* definimos:**
+
+| Entidad de configuración | Qué es |
+|---|---|
+| **Planta** | Layout operativo: líneas, zonas, puestos. El "dónde". |
+| **Cámara** | Dispositivo de captura, ubicado en la planta, apuntando a una zona/línea. |
+| **Objeto reconocible** | Clase de detección: pieza, caja, herramienta, persona, EPP, **defecto**… (catálogo). |
+| **Acción reconocible** | Patrón espacio-temporal: "operario coloca pieza", "máquina detenida", "caja llena", "persona en zona restringida"… (catálogo). |
+| **Regla** | Combinación **(cámara × objeto(s) × acción(es) × condición espacio-temporal)** → **genera un Evento**. Ej.: *"en cámara-3, si aparece `caja` con acción `llena` por >5 s → evento `caja_completa`"*. |
+
+**Runtime:**
+1. Las cámaras alimentan el **pipeline de visión** → **detección de objetos** + **reconocimiento de acciones**.
+2. El **motor de reglas** evalúa las detecciones contra las reglas configuradas → emite **Eventos canónicos** (cámara, objeto, acción, timestamp, frame/evidencia).
+3. Los eventos se **exponen a HEXA**, que les da **significado de negocio**: **trabar una orden**, **finalizar una producción**, registrar una no-conformidad, disparar una alerta, etc.
+
+**Modelo de dominio del MES (nuevo núcleo):**
+```
+Planta → Cámara → (Objeto, Acción) → Regla → Evento → HEXA
+```
+
+**Frontera afinada:** el MES **no** modela órdenes, procesos ni DAG (eso es de la producción de HEXA). El MES define **planta / cámaras / objetos / acciones / reglas** y **emite eventos**; HEXA los interpreta.
+
+**Impacto honesto en lo ya construido:** bajo esta definición, el núcleo .NET de **procesos/ejecución (`WorkModel`, `Execution`, `MasterData`) NO es el núcleo del MES** — migra a la producción de HEXA o se retira. **Sobrevive del MES:** el **backbone de eventos** (Kafka / outbox / relay), el **shell del tablero** (se reorienta a visualizar cámaras/eventos), y el **seam de identidad HEXA** ya construido. El resto se reemplaza por: **configuración (planta/cámaras/objetos/acciones/reglas)** + **pipeline de visión** + **motor de reglas de eventos**.
+
+**Plan MES reorientado (reemplaza el detalle de §5 para el núcleo):**
+- **V-A · Configuración**: ABM + API de **planta, cámaras, catálogo de objetos, catálogo de acciones, reglas** (el modelo de dominio de arriba). Es lo primero: sin config no hay eventos.
+- **V-B · Pipeline de visión**: ingesta de cámara (RTSP/IP/USB) → **detección de objetos** + **reconocimiento de acciones** (Python/GPU, ONNX/PyTorch).
+- **V-C · Motor de reglas**: evalúa (objeto × acción × cámara × condición) → **Evento canónico**.
+- **V-D · Salida a HEXA**: webhooks/API de eventos (§4.3) + **seam de identidad (✅ hecho)**.
+- **V-E · Tablero de planta**: reorienta el tablero actual a **cámaras + eventos en vivo** (no progreso de tareas).
+
+---
+
 ## 3. Modelo conceptual: la frontera HEXA ↔ MES
 
 El principio: **HEXA es dueño del _plan_ y del _registro de negocio_; el MES es dueño de _lo que realmente pasa_ y de _los ojos_.** Cada dato tiene un solo dueño (single source of truth).

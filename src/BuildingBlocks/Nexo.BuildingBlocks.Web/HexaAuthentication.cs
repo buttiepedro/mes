@@ -29,9 +29,12 @@ public static class HexaAuthentication
 
     public static AuthenticationBuilder AddNexoHexaJwt(this IServiceCollection services, IConfiguration configuration)
     {
+        // IMPORTANTE (interop con HEXA): el secreto HS256 debe ser >= 32 bytes (256 bits). El .NET del MES
+        // (Microsoft.IdentityModel) RECHAZA HS256 con claves mas cortas (RFC 7518 -> IDX10503), aunque PyJWT
+        // (HEXA) las acepte. El JWT_SECRET compartido con HEXA tiene que ser largo. Ver HEXA-INTEGRATION.md §4.5.
         var secret = configuration["Hexa:JwtSecret"]
             ?? configuration["JWT_SECRET"]
-            ?? "insecure-jwt-secret"; // igual al default dev de HEXA; se sobreescribe en despliegues reales
+            ?? "nexo-mes-dev-fallback-secret-min-256-bits-0123456789"; // fallback dev (>=32 bytes); se sobreescribe en prod
         var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
 
         return services

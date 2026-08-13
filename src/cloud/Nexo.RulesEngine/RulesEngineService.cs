@@ -15,8 +15,15 @@ public sealed class RulesEngineService : BackgroundService
     private readonly ConcurrentQueue<JsonElement> _events = new();
     private readonly object _lock = new();
     private readonly ILogger<RulesEngineService> _log;
+    private readonly IHttpClientFactory _httpFactory;
+    private readonly string? _sinkUrl;
 
-    public RulesEngineService(ILogger<RulesEngineService> log) => _log = log;
+    public RulesEngineService(ILogger<RulesEngineService> log, IHttpClientFactory httpFactory, IConfiguration config)
+    {
+        _log = log;
+        _httpFactory = httpFactory;
+        _sinkUrl = config["Events:SinkUrl"]; // event-gateway (o directo HEXA en su defecto)
+    }
 
     public void LoadRules(IEnumerable<RuleRuntime> rules)
     {
@@ -150,6 +157,21 @@ public sealed class RulesEngineService : BackgroundService
 
         var type = r.Emit.TryGetProperty("event_type", out var et) ? et.GetString() : "?";
         _log.LogInformation("Evento emitido: {Type} (regla {Rule})", type, r.Code);
+
+        // Reenvío al sink (event-gateway → HEXA). Fire-and-forget; el gateway maneja firma/reintentos.
+        if (!string.IsNullOrEmpty(_sinkUrl))
+        {
+            var body = evt.GetRawText();
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    using var content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+                    await _httpFactory.CreateClient().PostAsync(_sinkUrl, content);
+                }
+                catch (Exception ex) { _log.LogWarning(ex, "No se pudo reenviar el evento al sink {Sink}", _sinkUrl); }
+            });
+        }
     }
 
     private static JsonElement BuildEvent(RuleRuntime r, DateTimeOffset now, Observation? m, double? duration, int? count)

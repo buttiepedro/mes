@@ -40,6 +40,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nexo.MesApi.Api", "src\clou
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nexo.RulesEngine", "src\cloud\Nexo.RulesEngine\Nexo.RulesEngine.csproj", "{06EE3531-101F-4C6E-9B04-15673DB0EC19}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nexo.EventGateway", "src\cloud\Nexo.EventGateway\Nexo.EventGateway.csproj", "{5C452B44-1AA6-4205-8711-4570018FE5E9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -98,6 +100,10 @@ Global
 		{06EE3531-101F-4C6E-9B04-15673DB0EC19}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{06EE3531-101F-4C6E-9B04-15673DB0EC19}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{06EE3531-101F-4C6E-9B04-15673DB0EC19}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5C452B44-1AA6-4205-8711-4570018FE5E9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5C452B44-1AA6-4205-8711-4570018FE5E9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5C452B44-1AA6-4205-8711-4570018FE5E9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5C452B44-1AA6-4205-8711-4570018FE5E9}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -115,5 +121,6 @@ Global
 		{C85C95FF-FFDC-423D-B9FD-C5FDC1499E42} = {5FEF15E2-E86F-4269-8348-A1772313925F}
 		{82B31249-4A23-4873-B308-B98BA9F7A759} = {5FEF15E2-E86F-4269-8348-A1772313925F}
 		{06EE3531-101F-4C6E-9B04-15673DB0EC19} = {1FC764E3-09A3-4208-9A92-6D042E4D2158}
+		{5C452B44-1AA6-4205-8711-4570018FE5E9} = {1FC764E3-09A3-4208-9A92-6D042E4D2158}
 	EndGlobalSection
 EndGlobal

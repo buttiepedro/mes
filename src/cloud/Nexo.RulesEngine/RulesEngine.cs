@@ -156,4 +156,6 @@ public sealed class RuleRuntime
     public DateTimeOffset? SustainedSince;
     public bool SustainedFired;
     public readonly List<DateTimeOffset> CountHits = new();
+    public int SeqIndex;
+    public DateTimeOffset? SeqPrevAt;
 }

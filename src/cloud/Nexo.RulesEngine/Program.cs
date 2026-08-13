@@ -15,6 +15,10 @@ builder.Services.AddMultiTenancy(builder.Configuration);
 builder.Services.AddSingleton<RulesEngineService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RulesEngineService>());
 
+// Carga de reglas desde la config (pull del config-bundle de Nexo.MesApi).
+builder.Services.AddHttpClient();
+builder.Services.AddHostedService<ConfigLoader>();
+
 // AuthN: dev-bypass o HexaJwt en Development; HEXA como IdP en el resto.
 if (builder.Environment.IsDevelopment())
 {

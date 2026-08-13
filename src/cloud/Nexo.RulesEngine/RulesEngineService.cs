@@ -102,6 +102,33 @@ public sealed class RulesEngineService : BackgroundService
                     break;
                 }
 
+                case "sequence":
+                {
+                    var within = r.Trigger.TryGetProperty("within_seconds", out var wEl) ? wEl.GetDouble() : 0;
+                    var steps = r.Trigger.GetProperty("steps");
+                    var stepCount = steps.GetArrayLength();
+
+                    // Timeout: si tardó más que la ventana desde el paso anterior, reinicia la secuencia.
+                    if (r.SeqIndex > 0 && r.SeqPrevAt is { } prev && (now - prev).TotalSeconds > within)
+                    {
+                        r.SeqIndex = 0;
+                        r.SeqPrevAt = null;
+                    }
+
+                    if (Evaluator.EvalBool(steps[r.SeqIndex], dets, sigs, out var seqMatched))
+                    {
+                        r.SeqIndex++;
+                        r.SeqPrevAt = now;
+                        if (r.SeqIndex >= stepCount)
+                        {
+                            Fire(r, now, seqMatched);
+                            r.SeqIndex = 0;
+                            r.SeqPrevAt = null;
+                        }
+                    }
+                    break;
+                }
+
                 default: // match / signal / and / or / not — edge trigger (dispara al pasar de false a true)
                 {
                     var value = Evaluator.EvalBool(r.Trigger, dets, sigs, out var matched);

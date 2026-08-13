@@ -66,6 +66,10 @@ if (app.Environment.IsDevelopment())
     app.UseCors(DevCors.PolicyName);
 }
 
+// Tablero de planta (wwwroot/index.html) — público; su fetch usa el dev-bypass.
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.UseAuthentication();
 app.UseNexoWeb();          // exception handling + tenant resolution
 app.UseAuthorization();

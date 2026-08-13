@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nexo MES · Tablero de planta</title>
+  <style>
+    :root{--bg:#0e1117;--panel:#161b22;--panel2:#1c2430;--border:#2a3441;--text:#e6edf3;--muted:#8b98a5;
+      --accent:#3fb950;--accent2:#58a6ff;--warn:#d29922;--danger:#f85149}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+    header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:16px 24px;border-bottom:1px solid var(--border);background:var(--panel);position:sticky;top:0;z-index:5}
+    header h1{font-size:18px;margin:0;font-weight:650}
+    header h1 .sub{color:var(--muted);font-weight:400}
+    .live{display:inline-flex;align-items:center;gap:7px;margin-left:auto;color:var(--muted);font-size:13px}
+    .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);animation:pulse 2s infinite}
+    @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(63,185,80,.5)}70%{box-shadow:0 0 0 8px rgba(63,185,80,0)}100%{box-shadow:0 0 0 0 rgba(63,185,80,0)}}
+    main{padding:24px;display:grid;grid-template-columns:1fr 1.4fr;gap:20px;align-items:start}
+    @media(max-width:900px){main{grid-template-columns:1fr}}
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px}
+    .card h2{margin:0 0 12px;font-size:14px;font-weight:650;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+    .row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px}
+    .row:last-child{border-bottom:0}
+    .row .code{font-weight:600;min-width:90px}
+    .row .meta{color:var(--muted);font-size:12px;margin-left:auto}
+    .pill{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--border);color:var(--muted)}
+    .pill.active{color:var(--accent);border-color:rgba(63,185,80,.4)}
+    .feed{max-height:70vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
+    .evt{background:var(--panel2);border:1px solid var(--border);border-left-width:3px;border-radius:8px;padding:10px 12px}
+    .evt.info{border-left-color:var(--accent2)} .evt.warning{border-left-color:var(--warn)} .evt.critical{border-left-color:var(--danger)}
+    .evt .top{display:flex;align-items:baseline;gap:10px}
+    .evt .type{font-weight:650}
+    .sev{font-size:10px;text-transform:uppercase;letter-spacing:.4px;padding:1px 7px;border-radius:999px}
+    .sev.info{color:var(--accent2);border:1px solid rgba(88,166,255,.4)} .sev.warning{color:var(--warn);border:1px solid rgba(210,153,34,.4)} .sev.critical{color:var(--danger);border:1px solid rgba(248,81,73,.4)}
+    .evt .when{color:var(--muted);font-size:12px;margin-left:auto}
+    .evt .det{color:var(--muted);font-size:12px;margin-top:4px}
+    .empty{color:var(--muted);text-align:center;padding:40px 10px;font-size:14px}
+    .counts{display:flex;gap:16px;margin-bottom:14px}
+    .counts b{font-size:22px;display:block} .counts span{color:var(--muted);font-size:12px}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Nexo MES <span class="sub">· Tablero de planta</span></h1>
+    <span class="live"><span class="dot"></span><span id="status">conectando…</span></span>
+  </header>
+  <main>
+    <div>
+      <div class="card">
+        <div class="counts">
+          <div><b id="cCam">0</b><span>cámaras</span></div>
+          <div><b id="cSig">0</b><span>señales</span></div>
+          <div><b id="cRule">0</b><span>reglas</span></div>
+          <div><b id="cEvt">0</b><span>eventos</span></div>
+        </div>
+        <h2>Cámaras</h2><div id="cameras"><div class="empty">—</div></div>
+      </div>
+      <div class="card" style="margin-top:20px">
+        <h2>Señales</h2><div id="signals"><div class="empty">—</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Eventos en vivo</h2>
+      <div id="feed" class="feed"><div class="empty">Sin eventos todavía. En cuanto una regla dispare, aparecen acá.</div></div>
+    </div>
+  </main>
+
+  <script>
+    const CONFIG_URL = '/v1/config-bundle';                    // mismo origen (MesApi)
+    const EVENTS_URL = 'http://localhost:5086/v1/events';      // RulesEngine (en prod: agregado por el BFF)
+    const esc = s => String(s ?? '').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    const statusEl = document.getElementById('status');
+
+    async function loadConfig(){
+      try{
+        const c = await (await fetch(CONFIG_URL,{headers:{Accept:'application/json'}})).json();
+        document.getElementById('cCam').textContent = c.cameras.length;
+        document.getElementById('cSig').textContent = c.signals.length;
+        document.getElementById('cRule').textContent = c.rules.length;
+        document.getElementById('cameras').innerHTML = c.cameras.length ? c.cameras.map(x=>
+          `<div class="row"><span class="code">${esc(x.code)}</span><span>${esc(x.name)}</span>`+
+          `<span class="meta">${esc(x.streamUrl||'')}</span><span class="pill ${x.status==='Active'?'active':''}">${esc(x.status)}</span></div>`).join('') : '<div class="empty">sin cámaras</div>';
+        document.getElementById('signals').innerHTML = c.signals.length ? c.signals.map(x=>
+          `<div class="row"><span class="code">${esc(x.code)}</span><span class="pill">${esc(x.valueType)}</span>`+
+          `<span class="meta">${esc(x.mqttTopic)}</span></div>`).join('') : '<div class="empty">sin señales</div>';
+      }catch(e){ /* MesApi puede tardar */ }
+    }
+
+    async function loadEvents(){
+      try{
+        const evts = await (await fetch(EVENTS_URL,{headers:{Accept:'application/json'}})).json();
+        document.getElementById('cEvt').textContent = evts.length;
+        const feed = document.getElementById('feed');
+        feed.innerHTML = evts.length ? evts.slice().reverse().map(e=>{
+          const sev=(e.severity||'info').toLowerCase();
+          const src=e.source||{};
+          const where=[src.camera_id&&('cám '+src.camera_id),src.zone_id&&('zona '+src.zone_id),src.signal_id&&('señal '+src.signal_id)].filter(Boolean).join(' · ');
+          const vals=Object.entries(e.values||{}).map(([k,v])=>`${k}=${esc(v)}`).join(' ');
+          const when=e.occurred_at?new Date(e.occurred_at).toLocaleTimeString():'';
+          return `<div class="evt ${sev}"><div class="top"><span class="type">${esc(e.event_type)}</span>`+
+            `<span class="sev ${sev}">${esc(sev)}</span><span class="when">${when}</span></div>`+
+            `<div class="det">${esc(where)}${where&&vals?' · ':''}${esc(vals)} · regla ${esc(e.rule_code)}</div></div>`;
+        }).join('') : '<div class="empty">Sin eventos todavía.</div>';
+        statusEl.textContent = `en vivo · ${evts.length} evento(s)`;
+        statusEl.classList.remove('err');
+      }catch(e){ statusEl.textContent='sin conexión al motor'; }
+    }
+
+    function tick(){ loadConfig(); loadEvents(); }
+    tick(); setInterval(tick, 2000);
+  </script>
+</body>
+</html>

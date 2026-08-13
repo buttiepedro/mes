@@ -19,6 +19,7 @@
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.4" />
 
     <!-- Mensajería -->
+    <PackageVersion Include="MQTTnet" Version="4.3.7.1207" />
     <PackageVersion Include="MassTransit" Version="8.2.5" />
     <PackageVersion Include="MassTransit.Kafka" Version="8.2.5" />
     <PackageVersion Include="Confluent.Kafka" Version="2.5.2" />

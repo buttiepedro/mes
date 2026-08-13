@@ -14,6 +14,15 @@ name: nexo-edge
 # WIP: los servicios se construyen en V-B (edge-vision Python/GPU · edge-signals).
 
 services:
+  # Broker MQTT del sitio (los PLC/sensores publican acá; edge-signals se suscribe).
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+    command: ["sh", "-c", "printf 'listener 1883\\nallow_anonymous true\\n' > /mosquitto/config/mosquitto.conf && exec mosquitto -c /mosquitto/config/mosquitto.conf"]
+    restart: unless-stopped
+    networks: [edge]
+
   edge-vision:
     build: { context: ./src/edge/edge-vision, dockerfile: Dockerfile }
     # Captura RTSP/USB + inferencia (objetos + acciones) en GPU local → emite DETECCIONES (no frames).

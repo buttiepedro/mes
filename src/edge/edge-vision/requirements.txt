@@ -1,0 +1,7 @@
+# Slice actual (StubDetector): solo stdlib de Python, sin dependencias.
+#
+# Detector real (a implementar, enchufa en StubDetector.run):
+#   opencv-python        # captura RTSP/USB + preprocesamiento
+#   onnxruntime          # inferencia (o onnxruntime-gpu para GPU)
+#   numpy
+#   (opcional) deep-sort-realtime  # tracking de objetos entre frames (track_id)
